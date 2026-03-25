@@ -1,63 +1,166 @@
-AgroKongo 🚜🇦🇴
-Conectando a Terra ao Mercado com Segurança.
+# AgroKongo 🚜🇦🇴
+**Conectando a Terra ao Mercado com Segurança.**
 
-O AgroKongo é uma plataforma de intermediação agrícola focada no mercado angolano, resolvendo o problema da falta de confiança entre produtores rurais e compradores urbanos através de um sistema de Escrow (Custódia Financeira).
+O AgroKongo é uma plataforma de intermediação agrícola focada no mercado angolano, resolvendo o problema da falta de confiança entre produtores rurais e compradores urbanos através de um sistema de **Escrow (Custódia Financeira)** e validação de identidade (KYC).
 
-🛡️ O Diferencial: Escrow Inteligente
-Diferente de um classificado comum, aqui o dinheiro é protegido:
+---
 
-Validação Humana: Administradores conferem talões bancários antes de autorizar o envio.
+## 🛡️ O Diferencial: Escrow Inteligente
+Diferente de um classificado comum, o AgroKongo protege o capital transacionado:
 
-Proteção ao Produtor: O agricultor só colhe/envia quando o sistema garante que o dinheiro já está em custódia.
+1.  **Custódia Segura:** O dinheiro do comprador é retido pela plataforma até a confirmação da entrega.
+2.  **Proteção ao Produtor:** O agricultor só inicia a colheita ou o envio após a garantia de que o valor já está em posse da plataforma.
+3.  **Liquidação Automatizada (95/5):** Após a entrega, o sistema liquida 95% do valor ao produtor e retém 5% de comissão operacional.
+4.  **Gestão de Disputas:** Mediação administrativa em casos de divergência na qualidade ou logística.
 
-Confirmação de Receção: O valor só é liquidado ao produtor após o comprador confirmar que a mercadoria chegou em condições.
+---
 
-Resolução de Disputas: Mediação administrativa para casos de quebra de contrato.
+## 🏗️ Arquitetura e Tech Stack
+O projeto foi migrado para uma arquitetura moderna e escalável:
 
-🏗️ Arquitetura e Tech Stack
-Para garantir que o sistema não falhe durante picos de safra, utilizamos:
+*   **Backend:** Python 3.11 + **Django REST Framework** (API First).
+*   **Frontend:** **React / Next.js 14** (App Router) + Tailwind CSS + Framer Motion.
+*   **Base de Dados:** **PostgreSQL** (Relacional e Robusto).
+*   **Autenticação:** JWT (JSON Web Tokens) com SimpleJWT.
+*   **Background Jobs:** Celery + Redis (Processamento de faturas e auditoria).
+*   **Documentação:** Swagger/OpenAPI via `drf-spectacular`.
+*   **Infraestrutura:** Docker & Docker Compose.
 
-Core: Python 3.11 / Flask (Padrão Application Factory)
+---
 
-Base de Dados: PostgreSQL (Integridade e Escala)
+## 📊 Estrutura do Projeto
+```plaintext
+├── accounts/           # Gestão de Usuários, Perfis e Autenticação
+├── marketplace/        # Motor de Vendas, Safras, Transações e Escrow
+├── locations/          # Geo-localização (Províncias e Municípios de Angola)
+├── core/               # Lógica compartilhada, Notificações e Helpers
+├── agrokongo/          # Configurações globais do Django (Settings/URLs)
+├── frontend/           # Aplicação Next.js (Interface do Usuário)
+│   ├── src/app/        # Páginas e Rotas (Next.js App Router)
+│   ├── src/components/ # Componentes UI Reutilizáveis
+│   └── src/contexts/   # Gerenciamento de Estado (Auth, etc.)
+├── static/             # Arquivos estáticos globais
+├── media/              # Uploads (Fotos de Safras, Documentos KYC)
+├── logs/               # Registros de auditoria do sistema
+├── docker-compose.yml  # Orquestração de serviços (Django, Postgres, Redis, Next.js)
+└── modelo_relacional_agrokongo.txt # Documentação da Base de Dados
+```
 
-Background Jobs: Celery + Redis (Processamento de faturas e auditoria automática)
+---
 
-Segurança: Flask-Talisman (HTTPS), Flask-Limiter e Auditoria de Logs imutável.
+## 🚀 Como Executar (Desenvolvimento)
 
-Infraestrutura: Docker & Docker Compose.
+### 1. Requisitos
+*   Docker & Docker Compose
+*   Node.js 18+ (para desenvolvimento frontend local)
+*   Python 3.11+ (para desenvolvimento backend local)
 
-📦 Instalação e Deploy (Via Docker)
-A forma mais rápida e segura de rodar o AgroKongo é através de containers:
-
-Clone o Repositório:
-
-Bash
+### 2. Configuração
+Clone o repositório e configure as variáveis de ambiente:
+```bash
 git clone https://github.com/teu-usuario/agrokongo.git
 cd agrokongo
-Configure as Variáveis de Ambiente: Crie um ficheiro .env na raiz:
+```
+Crie um arquivo `.env` na raiz seguindo o modelo das configurações em `agrokongo/settings.py`.
 
-Code snippet
-SECRET_KEY=sua_chave_ultra_secreta
-DATABASE_URL=postgresql://agrokongo:senha_segura@db:5432/agrokongo
-REDIS_URL=redis://redis:6379/0
-FLASK_ENV=production
-Suba a Infraestrutura:
-
-Bash
+### 3. Execução via Docker
+```bash
 docker-compose up -d --build
-Este comando levanta o Web Server, a DB Postgres, o Redis e o Worker do Celery automaticamente.
+```
+*   **Backend API:** `http://localhost:8000/api/`
+*   **Documentação (Swagger):** `http://localhost:8000/api/docs/`
+*   **Frontend Web:** `http://localhost:3000`
 
-Aceda à Aplicação: O sistema estará disponível em http://localhost:5000 (ou porta 80, conforme configurado).
+---
 
-📊 Estrutura de Pastas
-Plaintext
-├── app/                # Código fonte da aplicação
-│   ├── models/         # Modelos de dados e lógica de negócio
-│   ├── routes/         # Blueprints (Admin, Produtor, Comprador)
-│   ├── tasks.py        # Tarefas assíncronas (Celery)
-│   └── utils/          # Helpers (Otimização de imagem, etc)
-├── data_storage/       # Volumes persistentes (Imagens e PDFs)
-├── docker-compose.yml  # Orquestração de serviços
-├── Dockerfile          # Definição do container principal
+## 🔐 Segurança e Compliance
+*   **KYC (Know Your Customer):** Validação obrigatória de NIF e IBAN para produtores.
+*   **RBAC (Role-Based Access Control):** Permissões distintas para Produtores, Compradores e Administradores.
+*   **Audit Trail:** Histórico imutável de mudanças de status em todas as transações financeiras.
+
+---
+© 2024 AgroKongo - Soluções Agrícolas Digitais para Angola.
+# AgroKongo 🚜🇦🇴
+**Conectando a Terra ao Mercado com Segurança.**
+
+O AgroKongo é uma plataforma de intermediação agrícola focada no mercado angolano, resolvendo o problema da falta de confiança entre produtores rurais e compradores urbanos através de um sistema de **Escrow (Custódia Financeira)** e validação de identidade (KYC).
+
+---
+
+## 🛡️ O Diferencial: Escrow Inteligente
+Diferente de um classificado comum, o AgroKongo protege o capital transacionado:
+
+1.  **Custódia Segura:** O dinheiro do comprador é retido pela plataforma até a confirmação da entrega.
+2.  **Proteção ao Produtor:** O agricultor só inicia a colheita ou o envio após a garantia de que o valor já está em posse da plataforma.
+3.  **Liquidação Automatizada (95/5):** Após a entrega, o sistema liquida 95% do valor ao produtor e retém 5% de comissão operacional.
+4.  **Gestão de Disputas:** Mediação administrativa em casos de divergência na qualidade ou logística.
+
+---
+
+## 🏗️ Arquitetura e Tech Stack
+O projeto foi migrado para uma arquitetura moderna e escalável:
+
+*   **Backend:** Python 3.11 + **Django REST Framework** (API First).
+*   **Frontend:** **React / Next.js 14** (App Router) + Tailwind CSS + Framer Motion.
+*   **Base de Dados:** **PostgreSQL** (Relacional e Robusto).
+*   **Autenticação:** JWT (JSON Web Tokens) com SimpleJWT.
+*   **Background Jobs:** Celery + Redis (Processamento de faturas e auditoria).
+*   **Documentação:** Swagger/OpenAPI via `drf-spectacular`.
+*   **Infraestrutura:** Docker & Docker Compose.
+
+---
+
+## 📊 Estrutura do Projeto
+```plaintext
+├── accounts/           # Gestão de Usuários, Perfis e Autenticação
+├── marketplace/        # Motor de Vendas, Safras, Transações e Escrow
+├── locations/          # Geo-localização (Províncias e Municípios de Angola)
+├── core/               # Lógica compartilhada, Notificações e Helpers
+├── agrokongo/          # Configurações globais do Django (Settings/URLs)
+├── frontend/           # Aplicação Next.js (Interface do Usuário)
+│   ├── src/app/        # Páginas e Rotas (Next.js App Router)
+│   ├── src/components/ # Componentes UI Reutilizáveis
+│   └── src/contexts/   # Gerenciamento de Estado (Auth, etc.)
+├── static/             # Arquivos estáticos globais
+├── media/              # Uploads (Fotos de Safras, Documentos KYC)
+├── logs/               # Registros de auditoria do sistema
+├── docker-compose.yml  # Orquestração de serviços (Django, Postgres, Redis, Next.js)
+└── modelo_relacional_agrokongo.txt # Documentação da Base de Dados
+```
+
+---
+
+## 🚀 Como Executar (Desenvolvimento)
+
+### 1. Requisitos
+*   Docker & Docker Compose
+*   Node.js 18+ (para desenvolvimento frontend local)
+*   Python 3.11+ (para desenvolvimento backend local)
+
+### 2. Configuração
+Clone o repositório e configure as variáveis de ambiente:
+```bash
+git clone https://github.com/teu-usuario/agrokongo.git
+cd agrokongo
+```
+Crie um arquivo `.env` na raiz seguindo o modelo das configurações em `agrokongo/settings.py`.
+
+### 3. Execução via Docker
+```bash
+docker-compose up -d --build
+```
+*   **Backend API:** `http://localhost:8000/api/`
+*   **Documentação (Swagger):** `http://localhost:8000/api/docs/`
+*   **Frontend Web:** `http://localhost:3000`
+
+---
+
+## 🔐 Segurança e Compliance
+*   **KYC (Know Your Customer):** Validação obrigatória de NIF e IBAN para produtores.
+*   **RBAC (Role-Based Access Control):** Permissões distintas para Produtores, Compradores e Administradores.
+*   **Audit Trail:** Histórico imutável de mudanças de status em todas as transações financeiras.
+
+---
+© 2024 AgroKongo - Soluções Agrícolas Digitais para Angola.
+
 └── run.py              # Entry point da aplicação
