@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="pt-AO">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offline - AgroKongo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      text-align: center;
+      padding: 20px;
+    }
+    
+    .container {
+      max-width: 500px;
+    }
+    
+    h1 {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      animation: pulse 2s infinite;
+    }
+    
+    p {
+      font-size: 1.2rem;
+      margin-bottom: 2rem;
+      opacity: 0.9;
+    }
+    
+    .icon {
+      font-size: 5rem;
+      margin-bottom: 1rem;
+    }
+    
+    button {
+      background: white;
+      color: #667eea;
+      border: none;
+      padding: 15px 40px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    button:active {
+      transform: translateY(0);
+    }
+    
+    @keyframes pulse {
+      0%, 100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.7;
+      }
+    }
+    
+    .status {
+      margin-top: 2rem;
+      padding: 1rem;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">📡</div>
+    <h1>Offline</h1>
+    <p>Parece que você está sem conexão com a internet. Não se preocupe, você pode acessar algumas funcionalidades quando estiver online novamente.</p>
+    
+    <button onclick="window.location.reload()">
+      🔄 Tentar Novamente
+    </button>
+    
+    <div class="status">
+      <p><strong>Dica:</strong> Algumas páginas podem estar disponíveis no cache. Tente recarregar.</p>
+    </div>
+  </div>
+  
+  <script>
+    // Verificar conexão periodicamente
+    setInterval(() => {
+      if (navigator.onLine) {
+        window.location.reload();
+      }
+    }, 5000);
+    
+    // Escutar mudanças de conexão
+    window.addEventListener('online', () => {
+      window.location.reload();
+    });
+    
+    window.addEventListener('offline', () => {
+      console.log('Aplicação está offline');
+    });
+  </script>
+</body>
+</html>
