@@ -1,0 +1,18 @@
+/* Personalização do Admin Django */
+#header {
+    background: #2E7D32;  /* Verde AgroKongo */
+    color: #fff;
+}
+
+#branding h1 {
+    color: #fff;
+}
+
+.module h2, .module caption, .inline-group h2 {
+    background: #4CAF50;
+}
+
+.button, input[type=submit], input[type=button], .submit-row input, a.button {
+    background: #2E7D32;
+    color: #fff;
+}

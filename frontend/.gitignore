@@ -1,0 +1,24 @@
+# frontend/.gitignore
+
+# Environment variables
+.env.local
+.env.production.local
+.env.development.local
+
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Build
+build/
+dist/
+
+# Testing
+coverage/
+
+# IDE
+.vscode/
+.idea/
