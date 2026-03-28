@@ -1,77 +1,195 @@
+# core/models.py
 from django.db import models
 from django.utils import timezone
 
 
+# ===========================================
+# NOTIFICAÇÃO
+# ===========================================
 class Notificacao(models.Model):
-    """Sistema de Notificações do Usuário"""
-    usuario = models.ForeignKey('accounts.Usuario', on_delete=models.CASCADE, related_name='notificacoes')
-    mensagem = models.CharField(max_length=255, null=False)
-    link = models.CharField(max_length=255, null=True, blank=True)
-    lida = models.BooleanField(default=False, db_index=True)
+    """Notificações do sistema para usuários"""
+
+    TIPO_CHOICES = [
+        ('info', 'Informação'),
+        ('aviso', 'Aviso'),
+        ('erro', 'Erro'),
+        ('sucesso', 'Sucesso'),
+    ]
+
+    usuario = models.ForeignKey(
+        'accounts.Usuario',
+        on_delete=models.CASCADE,
+        related_name='notificacoes'
+    )
+    titulo = models.CharField(max_length=200)
+    mensagem = models.TextField()
+    tipo = models.CharField(
+        max_length=20,
+        choices=TIPO_CHOICES,
+        default='info'
+    )
+    lida = models.BooleanField(default=False)
     data_criacao = models.DateTimeField(auto_now_add=True)
+    data_leitura = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'notificacoes'
-        verbose_name = 'Notificação'
-        verbose_name_plural = 'Notificações'
         ordering = ['-data_criacao']
+        indexes = [
+            models.Index(fields=['usuario', 'lida']),
+            models.Index(fields=['data_criacao']),
+        ]
 
     def __str__(self):
-        return f'{self.usuario.username}: {self.mensagem[:50]}'
+        return f'{self.titulo} - {self.usuario.username}'
+
+    def marcar_lida(self):
+        """Marca notificação como lida"""
+        self.lida = True
+        self.data_leitura = timezone.now()
+        self.save(update_fields=['lida', 'data_leitura'])
 
 
+# ===========================================
+# MENSAGEM (SUPORTE)
+# ===========================================
 class Mensagem(models.Model):
-    """Mensagens entre Usuários (Chat por Transação)"""
-    transacao = models.ForeignKey('marketplace.Transacao', on_delete=models.CASCADE, related_name='mensagens')
-    remetente = models.ForeignKey('accounts.Usuario', on_delete=models.CASCADE, related_name='mensagens_enviadas')
-    destinatario = models.ForeignKey('accounts.Usuario', on_delete=models.CASCADE, related_name='mensagens_recebidas')
-    conteudo = models.TextField(null=False)
-    data_envio = models.DateTimeField(auto_now_add=True)
-    lida = models.BooleanField(default=False)
+    """Mensagens de suporte entre usuários e admin"""
+
+    STATUS_CHOICES = [
+        ('pendente', 'Pendente'),
+        ('respondido', 'Respondido'),
+        ('fechado', 'Fechado'),
+    ]
+
+    usuario = models.ForeignKey(
+        'accounts.Usuario',
+        on_delete=models.CASCADE,
+        related_name='mensagens'
+    )
+    assunto = models.CharField(max_length=200, default='')
+    conteudo = models.TextField()
+    tipo = models.CharField(max_length=50, default='suporte')
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pendente'
+    )
+    resposta = models.TextField(null=True, blank=True)
+    respondido_por = models.ForeignKey(
+        'accounts.Usuario',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mensagens_respondidas',
+        limit_choices_to={'tipo': 'admin'}
+    )
+    data_criacao = models.DateTimeField(auto_now_add=True)
+    data_resposta = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = 'mensagens'
-        verbose_name = 'Mensagem'
-        verbose_name_plural = 'Mensagens'
-        ordering = ['data_envio']
+        ordering = ['-data_criacao']
+        indexes = [
+            models.Index(fields=['usuario', 'status']),
+            models.Index(fields=['data_criacao']),
+        ]
 
     def __str__(self):
-        return f'{self.remetente.username} → {self.destinatario.username}'
+        return f'{self.assunto} - {self.usuario.username}'
+
+    def responder(self, admin, resposta):
+        """Responde à mensagem"""
+        self.resposta = resposta
+        self.respondido_por = admin
+        self.status = 'respondido'
+        self.data_resposta = timezone.now()
+        self.save(update_fields=['resposta', 'respondido_por', 'status', 'data_resposta'])
 
 
+# ===========================================
+# ALERTA PREFERÊNCIA
+# ===========================================
+class AlertaPreferencia(models.Model):
+    """Alertas de preço para produtos específicos"""
+
+    usuario = models.ForeignKey(
+        'accounts.Usuario',
+        on_delete=models.CASCADE,
+        related_name='alertas'
+    )
+    produto = models.ForeignKey(
+        'marketplace.Produto',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='alertas'
+    )
+    preco_minimo = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True
+    )
+    preco_maximo = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True
+    )
+    ativo = models.BooleanField(default=True)
+    data_criacao = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'alertas_preferencia'
+        ordering = ['-data_criacao']
+        indexes = [
+            models.Index(fields=['usuario', 'ativo']),
+        ]
+
+    def __str__(self):
+        return f'{self.usuario.username} - {self.produto}'
+
+
+# ===========================================
+# LOG AUDITORIA
+# ===========================================
 class LogAuditoria(models.Model):
-    """Logs de Auditoria do Sistema"""
-    usuario = models.ForeignKey('accounts.Usuario', on_delete=models.SET_NULL, null=True)
-    acao = models.CharField(max_length=100, null=False)
-    detalhes = models.TextField(null=True, blank=True)
-    ip = models.GenericIPAddressField(null=True, blank=True)
+    """Logs de auditoria para ações críticas"""
+
+    ACAO_CHOICES = [
+        ('create', 'Criar'),
+        ('update', 'Atualizar'),
+        ('delete', 'Eliminar'),
+        ('login', 'Login'),
+        ('logout', 'Logout'),
+    ]
+
+    usuario = models.ForeignKey(
+        'accounts.Usuario',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='logs_auditoria'
+    )
+    acao = models.CharField(
+        max_length=20,
+        choices=ACAO_CHOICES
+    )
+    tabela_afetada = models.CharField(max_length=100)
+    registro_id = models.IntegerField(null=True, blank=True)
+    descricao = models.TextField()
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    dados_antigos = models.JSONField(null=True, blank=True)
+    dados_novos = models.JSONField(null=True, blank=True)
     data_criacao = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'logs_auditoria'
-        verbose_name = 'Log de Auditoria'
-        verbose_name_plural = 'Logs de Auditoria'
         ordering = ['-data_criacao']
+        indexes = [
+            models.Index(fields=['usuario', 'acao']),
+            models.Index(fields=['tabela_afetada', 'data_criacao']),
+        ]
 
     def __str__(self):
-        return f'{self.acao} - {self.data_criacao}'
-
-
-class AlertaPreferencia(models.Model):
-    """Alertas de Preferência de Produto"""
-    usuario = models.ForeignKey('accounts.Usuario', on_delete=models.CASCADE)
-    produto = models.ForeignKey('marketplace.Produto', on_delete=models.CASCADE)
-    data_criacao = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = 'alertas_preferencias'
-        verbose_name = 'Alerta de Preferência'
-        unique_together = ['usuario', 'produto']
-
-    def __str__(self):
-        return f'{self.usuario.username} - {self.produto.nome}'
-
-
-from django.db import models
-
-# Create your models here.
+        return f'{self.acao} - {self.tabela_afetada} - {self.usuario}'

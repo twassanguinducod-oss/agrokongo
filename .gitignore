@@ -1,32 +1,39 @@
-# agrokongoVS/.gitignore
-
-# Environment variables
-.env
-.env.local
-.env.production
-
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
+
+# Caches
+.cache/
+.pytest_cache/
+.eslintcache
+.next/
+
+# Environments
 .venv/
+env/
 venv/
 ENV/
+.env
 
-# Django
-*.log
-local_settings.py
-db.sqlite3
+# Database
+*.sqlite3
+data_storage/
+
+# Media & Static
 media/
 staticfiles/
+static/
 
-# IDE
-.vscode/
+# IDEs
 .idea/
+.vscode/
 *.swp
 *.swo
+
+# Logs
+logs/
+*.log
 
 # OS
 .DS_Store

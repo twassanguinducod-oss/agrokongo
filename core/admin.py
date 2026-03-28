@@ -1,73 +1,80 @@
+# core/admin.py
 from django.contrib import admin
-from .models import Notificacao, Mensagem, LogAuditoria, AlertaPreferencia
+from django.utils import timezone
+from .models import Notificacao, Mensagem, AlertaPreferencia, LogAuditoria
 
 
+# ===========================================
+# NOTIFICAÇÃO ADMIN
+# ===========================================
 @admin.register(Notificacao)
 class NotificacaoAdmin(admin.ModelAdmin):
-    list_display = ['id', 'usuario', 'mensagem_curta', 'lida', 'data_criacao']
-    list_display_links = ['id']
-    search_fields = ['usuario__username', 'mensagem']
-    list_filter = ['lida', 'data_criacao']
+    list_display = ['id', 'usuario', 'titulo', 'tipo', 'lida', 'data_criacao']
+    list_filter = ['lida', 'tipo', 'data_criacao']
+    search_fields = ['titulo', 'mensagem', 'usuario__username']
+    readonly_fields = ['data_criacao', 'data_leitura']
     ordering = ['-data_criacao']
-    readonly_fields = ['data_criacao']
 
-    def mensagem_curta(self, obj):
-        return obj.mensagem[:50] + '...' if len(obj.mensagem) > 50 else obj.mensagem
+    actions = ['marcar_como_lida', 'marcar_como_nao_lida']
 
-    mensagem_curta.short_description = 'Mensagem'
+    def marcar_como_lida(self, request, queryset):
+        queryset.update(lida=True, data_leitura=timezone.now())
+        self.message_user(request, f'{queryset.count()} notificações marcadas como lidas.')
 
-    actions = ['marcar_como_lidas', 'marcar_como_nao_lidas']
+    marcar_como_lida.short_description = 'Marcar como lida'
 
-    def marcar_como_lidas(self, request, queryset):
-        atualizados = queryset.update(lida=True)
-        self.message_user(request, f'{atualizados} notificações marcadas como lidas.')
+    def marcar_como_nao_lida(self, request, queryset):
+        queryset.update(lida=False, data_leitura=None)
+        self.message_user(request, f'{queryset.count()} notificações marcadas como não lidas.')
 
-    marcar_como_lidas.short_description = '✓ Marcar como lidas'
-
-    def marcar_como_nao_lidas(self, request, queryset):
-        atualizados = queryset.update(lida=False)
-        self.message_user(request, f'{atualizados} notificações marcadas como não lidas.')
-
-    marcar_como_nao_lidas.short_description = '✗ Marcar como não lidas'
+    marcar_como_nao_lida.short_description = 'Marcar como não lida'
 
 
+# ===========================================
+# MENSAGEM ADMIN
+# ===========================================
 @admin.register(Mensagem)
 class MensagemAdmin(admin.ModelAdmin):
-    list_display = ['id', 'transacao', 'remetente', 'destinatario', 'conteudo_curto', 'lida', 'data_envio']
-    list_display_links = ['id']
-    search_fields = ['remetente__username', 'destinatario__username', 'conteudo']
-    list_filter = ['lida', 'data_envio']
-    ordering = ['-data_envio']
-    readonly_fields = ['data_envio', 'remetente', 'destinatario']
-
-    def conteudo_curto(self, obj):
-        return obj.conteudo[:50] + '...' if len(obj.conteudo) > 50 else obj.conteudo
-
-    conteudo_curto.short_description = 'Conteúdo'
-
-
-@admin.register(LogAuditoria)
-class LogAuditoriaAdmin(admin.ModelAdmin):
-    list_display = ['id', 'usuario', 'acao', 'ip', 'data_criacao']
-    list_display_links = ['id']
-    search_fields = ['usuario__username', 'acao', 'ip']
-    list_filter = ['acao', 'data_criacao']
+    list_display = ['id', 'usuario', 'assunto', 'tipo', 'status', 'data_criacao']
+    list_filter = ['status', 'tipo', 'data_criacao']
+    search_fields = ['assunto', 'conteudo', 'usuario__username']
+    readonly_fields = ['data_criacao', 'data_resposta']
     ordering = ['-data_criacao']
-    readonly_fields = ['data_criacao', 'ip']
 
-    actions = ['exportar_logs']
+    actions = ['marcar_como_respondido', 'marcar_como_pendente']
 
-    def exportar_logs(self, request, queryset):
-        self.message_user(request, 'Exportação de logs iniciada (em desenvolvimento).')
+    def marcar_como_respondido(self, request, queryset):
+        queryset.update(status='respondido')
+        self.message_user(request, f'{queryset.count()} mensagens marcadas como respondidas.')
 
-    exportar_logs.short_description = '📥 Exportar logs'
+    marcar_como_respondido.short_description = 'Marcar como respondido'
+
+    def marcar_como_pendente(self, request, queryset):
+        queryset.update(status='pendente')
+        self.message_user(request, f'{queryset.count()} mensagens marcadas como pendentes.')
+
+    marcar_como_pendente.short_description = 'Marcar como pendente'
 
 
+# ===========================================
+# ALERTA PREFERÊNCIA ADMIN
+# ===========================================
 @admin.register(AlertaPreferencia)
 class AlertaPreferenciaAdmin(admin.ModelAdmin):
-    list_display = ['id', 'usuario', 'produto', 'data_criacao']
-    list_display_links = ['id']
+    list_display = ['id', 'usuario', 'produto', 'preco_maximo', 'ativo', 'data_criacao']
+    list_filter = ['ativo', 'data_criacao']
     search_fields = ['usuario__username', 'produto__nome']
-    list_filter = ['data_criacao']
-    ordering = ['-data_criacao']
     readonly_fields = ['data_criacao']
+    ordering = ['-data_criacao']
+
+
+# ===========================================
+# LOG AUDITORIA ADMIN
+# ===========================================
+@admin.register(LogAuditoria)
+class LogAuditoriaAdmin(admin.ModelAdmin):
+    list_display = ['id', 'usuario', 'acao', 'tabela_afetada', 'registro_id', 'data_criacao']
+    list_filter = ['acao', 'tabela_afetada', 'data_criacao']
+    search_fields = ['usuario__username', 'descricao']
+    readonly_fields = ['data_criacao', 'dados_antigos', 'dados_novos', 'ip_address']
+    ordering = ['-data_criacao']

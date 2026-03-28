@@ -1,224 +1,210 @@
 # accounts/views.py
-"""
-ViewSets para Gestão de Usuários e Autenticação JWT
-"""
-from rest_framework import viewsets, status, permissions, filters
-from rest_framework.response import Response
+from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.response import Response
 from django.contrib.auth import authenticate
-from django.db.models import Q
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
-from drf_spectacular.types import OpenApiTypes
-
-from .models import Usuario
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.db.models import Sum, Count, Q
+from django.utils import timezone
+from django.core.cache import cache # ✅ Importar cache
+from .models import Usuario, Levantamento
+from marketplace.models import Safra, Reserva, Pagamento
+from core.models import Notificacao, Mensagem
 from .serializers import (
     UsuarioSerializer,
     UsuarioRegistroSerializer,
+    UsuarioPerfilSerializer,
     UsuarioLoginSerializer,
-    UsuarioUpdatePasswordSerializer
+    UsuarioUpdatePasswordSerializer,
+    UsuarioListSerializer,
+    LevantamentoSerializer,
+    UsuarioPublicoSerializer, # ✅ Importar o novo serializer público
 )
 
 
-@method_decorator(csrf_exempt, name='dispatch')
+# ===========================================
+# USUÁRIO VIEWSET (GESTÃO E DASHBOARD)
+# ===========================================
 class UsuarioViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet para gestão de Usuários.
-
-    Endpoints:
-    - POST /api/accounts/usuarios/ - Registro
-    - POST /api/accounts/usuarios/login/ - Login (JWT)
-    - GET /api/accounts/usuarios/me/ - Perfil atual
-    - PUT /api/accounts/usuarios/me/ - Atualizar perfil
-    - POST /api/accounts/usuarios/me/change-password/ - Mudar senha
-    """
+    """ViewSet para gestão de usuários e Dashboards."""
     queryset = Usuario.objects.all()
-    permission_classes = [permissions.IsAuthenticated]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['username', 'email', 'telemovel', 'nif']
-    ordering_fields = ['data_cadastro', 'username', 'rating_vendedor']
-    ordering = ['-data_cadastro']
+    permission_classes = [permissions.AllowAny]
 
     def get_serializer_class(self):
         if self.action == 'create':
             return UsuarioRegistroSerializer
-        elif self.action == 'login':
-            return UsuarioLoginSerializer
-        elif self.action == 'change_password':
-            return UsuarioUpdatePasswordSerializer
+        elif self.action == 'list': # ✅ Usar o ListSerializer para listagem de admin
+            return UsuarioListSerializer
+        elif self.action == 'retrieve': # ✅ Usar o PublicoSerializer para visualização pública
+            return UsuarioPublicoSerializer
         return UsuarioSerializer
 
     def get_permissions(self):
-        """Permissões específicas por ação"""
         if self.action in ['create', 'login']:
             return [permissions.AllowAny()]
-        elif self.action in ['me', 'change_password']:
+        elif self.action in ['me', 'update_perfil', 'dashboard']: # ✅ Adicionar dashboard aqui
             return [permissions.IsAuthenticated()]
-        elif self.action == 'list':
-            return [permissions.IsAdminUser()]
+        elif self.action in ['list', 'retrieve']: # ✅ List e Retrieve podem ser públicos ou restritos
+            return [permissions.AllowAny()] # Ou IsAdminUser para list, IsAuthenticated para retrieve
         return [permissions.IsAuthenticated()]
 
-    def get_queryset(self):
-        """Cada usuário só vê o seu próprio perfil (exceto admin)"""
-        user = self.request.user
-        if user.is_authenticated and not user.is_staff:
-            return Usuario.objects.filter(id=user.id)
-        return super().get_queryset()
-
-    @extend_schema(
-        summary='Registro de novo usuário',
-        description='Cria um novo usuário no sistema AgroKongo e retorna tokens JWT.',
-        tags=['auth'],
-        request=UsuarioRegistroSerializer,
-        responses={201: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
-    )
-    def create(self, request, *args, **kwargs):
-        """Registro de novo usuário com retorno de tokens JWT"""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-
-        # Marcar como validada temporariamente ou por padrão se necessário
-        # user.conta_validada = True 
-        # user.save()
-
-        refresh = RefreshToken.for_user(user)
-
-        return Response({
-            'user': UsuarioSerializer(user, context={'request': request}).data,
-            'tokens': {
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-            }
-        }, status=status.HTTP_201_CREATED)
-
-    @extend_schema(
-        summary='Login com JWT',
-        description='Autentica usuário e retorna tokens de acesso (60 min) e refresh (1 dia).',
-        tags=['auth'],
-        request=UsuarioLoginSerializer,
-        responses={
-            200: OpenApiTypes.OBJECT,
-            401: {'type': 'object', 'properties': {'error': {'type': 'string'}}},
-            403: {'type': 'object', 'properties': {'error': {'type': 'string'}}},
-        },
-    )
-    # accounts/views.py
-    @action(detail=False, methods=['post'], permission_classes=[permissions.AllowAny])
-    @csrf_exempt
+    @action(detail=False, methods=['post'])
     def login(self, request):
-        """Login com username/telemóvel/email + password, retorna tokens JWT"""
-        print("🔐 LOGIN HIT!")
-
+        """Login com telemóvel/email + senha."""
         serializer = UsuarioLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        # ✅ Aceita username, telemóvel OU email
-        username = serializer.validated_data.get('username')
-        email = serializer.validated_data.get('email')
-        password = serializer.validated_data['password']
-
-        # Tenta autenticar
         user = authenticate(
-            username=username if username and '@' not in username else None,
-            email=email if email else (username if username and '@' in username else None),
-            password=password
+            username=serializer.validated_data.get('username') or 
+                     serializer.validated_data.get('email') or 
+                     serializer.validated_data.get('telemovel'),
+            password=serializer.validated_data['password']
         )
 
         if not user:
-            return Response(
-                {'error': 'Credenciais inválidas'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
+            return Response({'error': 'Credenciais inválidas'}, status=status.HTTP_401_UNAUTHORIZED)
 
         if not user.conta_validada:
-            return Response(
-                {'error': 'Conta não validada. Contacte o suporte.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return Response({'error': 'Conta não validada.'}, status=status.HTTP_403_FORBIDDEN)
 
-        # Gerar tokens JWT
         refresh = RefreshToken.for_user(user)
-
         return Response({
-            'success': True,
-            'message': 'Login realizado com sucesso',
             'user': UsuarioSerializer(user, context={'request': request}).data,
-            'tokens': {
-                'access': str(refresh.access_token),
-                'refresh': str(refresh),
-                'expires_in': 3600
-            }
-        }, status=status.HTTP_200_OK)
+            'tokens': {'access': str(refresh.access_token), 'refresh': str(refresh)}
+        })
 
-    @extend_schema(
-        summary='Perfil do usuário atual',
-        description='Obter ou atualizar perfil do usuário autenticado.',
-        tags=['auth'],
-        responses={200: UsuarioSerializer},
-    )
-    @action(detail=False, methods=['get', 'put', 'patch'], permission_classes=[permissions.IsAuthenticated])
-    def me(self, request):
-        """Obter ou atualizar perfil do usuário atual"""
+    @action(detail=False, methods=['get'])
+    def dashboard(self, request):
+        """
+        ENDPOINT CENTRAL DE ESTATÍSTICAS (Dashboard) com CACHE.
+        Retorna dados baseados no tipo de usuário.
+        """
         user = request.user
+        cache_key = f'dashboard_stats_{user.tipo}_{user.id}' # Chave de cache única por usuário e tipo
+        cached_data = cache.get(cache_key)
 
-        if request.method == 'GET':
-            serializer = UsuarioSerializer(user, context={'request': request})
-            return Response(serializer.data)
+        if cached_data:
+            return Response(cached_data, status=status.HTTP_200_OK)
 
-        serializer = UsuarioSerializer(user, data=request.data, partial=True, context={'request': request})
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-
-        user.verificar_e_atualizar_perfil()
-
-        return Response(UsuarioSerializer(user, context={'request': request}).data)
-
-    @extend_schema(
-        summary='Mudar senha',
-        description='Alterar senha do usuário autenticado.',
-        tags=['auth'],
-        request=UsuarioUpdatePasswordSerializer,
-        responses={200: {'type': 'object', 'properties': {'message': {'type': 'string'}}}},
-    )
-    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
-    def change_password(self, request):
-        """Mudar senha do usuário atual"""
-        serializer = UsuarioUpdatePasswordSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        user = request.user
-
-        if not user.check_password(serializer.validated_data['senha_atual']):
-            return Response(
-                {'senha_atual': 'Senha atual incorreta.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        user.set_password(serializer.validated_data['nova_senha'])
-        user.save()
-
-        return Response({'message': 'Senha atualizada com sucesso.'})
-
-    @extend_schema(
-        summary='Estatísticas do usuário',
-        description='Estatísticas detalhadas do usuário (apenas admin).',
-        tags=['auth'],
-        responses={200: OpenApiTypes.OBJECT},
-    )
-    @action(detail=True, methods=['get'], permission_classes=[permissions.IsAdminUser])
-    def stats(self, request, pk=None):
-        """Estatísticas do usuário (apenas admin)"""
-        user = self.get_object()
-
-        stats = {
-            'total_compras': user.compras.count(),
-            'total_vendas': user.vendas.count(),
-            'safras_ativas': user.safras.filter(status='disponivel').count(),
-            'notificacoes_nao_lidas': user.notificacoes.filter(lida=False).count(),
-            'rating_medio': float(user.rating_vendedor),
+        data = {
+            'tipo_perfil': user.tipo,
+            'notificacoes_nao_lidas': Notificacao.objects.filter(usuario=user, lida=False).count(),
         }
 
-        return Response(stats)
+        # --- DASHBOARD PRODUTOR ---
+        if user.tipo == 'produtor':
+            safras = Safra.objects.filter(produtor=user)
+            reservas = Reserva.objects.filter(safra__produtor=user)
+            
+            data.update({
+                'saldo_disponivel': user.saldo_disponivel,
+                'vendas_concluidas': user.vendas_concluidas,
+                'safras_ativas': safras.filter(status='active').count(),
+                'valor_em_escrow': reservas.filter(status='paga').aggregate(Sum('preco_total'))['preco_total__sum'] or 0,
+                'pedidos_para_entrega': reservas.filter(status='paga').count(),
+            })
+
+        # --- DASHBOARD COMPRADOR ---
+        elif user.tipo == 'comprador':
+            compras = Reserva.objects.filter(comprador=user)
+            
+            data.update({
+                'total_reservas': compras.count(),
+                'compras_concluidas': compras.filter(status='concluida').count(),
+                'aguardando_pagamento': compras.filter(status='confirmada').count(),
+                'total_gasto': compras.filter(status='concluida').aggregate(Sum('preco_total'))['preco_total__sum'] or 0,
+                'favoritos': 0, # Implementar futuramente
+            })
+
+        # --- DASHBOARD ADMIN ---
+        elif user.tipo == 'admin':
+            data.update({
+                'total_usuarios': Usuario.objects.count(),
+                'pagamentos_pendentes': Pagamento.objects.filter(status='pendente').count(),
+                'reservas_recebidas_aguardando_liberacao': Reserva.objects.filter(status='recebida').count(),
+                'mensagens_suporte_pendentes': Mensagem.objects.filter(status='pendente').count(),
+                'gmv_total': Reserva.objects.filter(status='concluida').aggregate(Sum('preco_total'))['preco_total__sum'] or 0,
+                'comissao_total_acumulada': Reserva.objects.filter(status='concluida').aggregate(Sum('comissao_plataforma'))['comissao_plataforma__sum'] or 0,
+            })
+        
+        cache.set(cache_key, data, timeout=300) # Cache por 5 minutos (300 segundos)
+        return Response(data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'])
+    def me(self, request):
+        serializer = UsuarioSerializer(request.user, context={'request': request})
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['put'])
+    def update_perfil(self, request):
+        serializer = UsuarioPerfilSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        request.user.verificar_e_atualizar_perfil()
+        return Response(UsuarioSerializer(request.user).data)
+
+
+# ===========================================
+# LEVANTAMENTO VIEWSET (SAQUE DE SALDO)
+# ===========================================
+class LevantamentoViewSet(viewsets.ModelViewSet):
+    """ViewSet para pedidos de levantamento de saldo."""
+    serializer_class = LevantamentoSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.tipo == 'admin':
+            return Levantamento.objects.all()
+        return Levantamento.objects.filter(usuario=self.request.user)
+
+    def get_permissions(self):
+        if self.action in ['aprovar', 'rejeitar']:
+            return [permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        if self.request.user.tipo != 'produtor':
+            raise PermissionError('Apenas produtores podem solicitar levantamentos de saldo.')
+        serializer.save(usuario=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def aprovar(self, request, pk=None):
+        levantamento = self.get_object()
+        comprovativo = request.data.get('comprovativo', '')
+        
+        try:
+            levantamento.aprovar(admin=request.user, comprovativo=comprovativo)
+            
+            Notificacao.objects.create(
+                usuario=levantamento.usuario,
+                titulo='Levantamento Concluído! ✅',
+                mensagem=f'O seu pedido de levantamento de {levantamento.valor} Kz foi processado com sucesso. Verifique a sua conta bancária.',
+                tipo='sucesso'
+            )
+            
+            return Response({
+                'success': True, 
+                'message': 'Levantamento aprovado e saldo subtraído do produtor.',
+                'status': levantamento.status
+            })
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def rejeitar(self, request, pk=None):
+        levantamento = self.get_object()
+        motivo = request.data.get('motivo', 'Motivo não especificado.')
+        
+        try:
+            levantamento.rejeitar(admin=request.user, motivo=motivo)
+            
+            Notificacao.objects.create(
+                usuario=levantamento.usuario,
+                titulo='Levantamento Rejeitado ❌',
+                mensagem=f'O seu pedido de levantamento de {levantamento.valor} Kz foi rejeitado. Motivo: {motivo}',
+                tipo='erro'
+            )
+            
+            return Response({'success': True, 'message': 'Levantamento rejeitado.', 'motivo': motivo})
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

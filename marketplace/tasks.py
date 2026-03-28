@@ -1,260 +1,85 @@
 # marketplace/tasks.py
-"""
-Tarefas Assíncronas do Celery para Marketplace
-Processamento em background para operações pesadas.
-"""
 from celery import shared_task
 from django.utils import timezone
-from datetime import timedelta
-from django.db.models import Q, Sum, Avg
-from django.core.mail import send_mail
-from decimal import Decimal
+from django.db import transaction
+from .models import Reserva, Safra
 import logging
-
-from .models import Transacao, TransactionStatus, Safra, Avaliacao
-from accounts.models import Usuario
 
 logger = logging.getLogger(__name__)
 
-
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def job_verificar_entregas(self):
+# ===========================================
+# 1. CANCELAR RESERVAS EXPIRADAS (24h)
+# ===========================================
+@shared_task(name='marketplace.tasks.verificar_reservas_expiradas')
+def verificar_reservas_expiradas():
     """
-    Tarefa agendada para confirmar entregas estagnadas automaticamente.
-    Roda a cada 1 hora via Celery Beat.
+    Cancela automaticamente reservas que não foram pagas em 24h.
+    Libera a quantidade_reservada na Safra original.
     """
-    try:
-        logger.info("---  Iniciando Auditoria de Entregas Automáticas ---")
-
-        # Transações em ANÁLISE há mais de 24 horas
-        limite = timezone.now() - timedelta(hours=24)
-        estagnadas = Transacao.ativas().filter(
-            status=TransactionStatus.ANALISE,
-            data_criacao__lte=limite
-        )
-
-        count = 0
-        for transacao in estagnadas:
-            try:
-                # Muda para ESCROW automaticamente
-                transacao.mudar_status(
-                    TransactionStatus.ESCROW,
-                    observacao='Confirmação automática por auditoria (24h sem ação)',
-                    auto_add=True
+    agora = timezone.now()
+    
+    # Busca reservas pendentes ou confirmadas que já passaram da data de expiração
+    # skip_locked=True evita que múltiplos workers processem a mesma reserva
+    reservas_expiradas = Reserva.objects.select_for_update(skip_locked=True).filter(
+        status__in=['pendente', 'confirmada'],
+        data_expiracao__lte=agora
+    )[:100]  # Limitamos a 100 por execução para evitar travar o processo
+    
+    contador = 0
+    for reserva in reservas_expiradas:
+        try:
+            with transaction.atomic():
+                reserva.cancelar()
+                contador += 1
+                logger.info(f"Reserva #{reserva.id} cancelada por expiração de tempo (24h).")
+                
+                # Criar Notificação para o Comprador
+                from core.models import Notificacao
+                Notificacao.objects.create(
+                    usuario=reserva.comprador,
+                    titulo='Reserva Expirada ⏳',
+                    mensagem=f'A sua reserva #{reserva.id} foi cancelada porque o pagamento não foi confirmado em 24h.',
+                    tipo='erro'
                 )
-                transacao.save()
-
-                # Notifica comprador e vendedor
-                enviar_notificacao_auditoria.delay(transacao.id)
-
-                count += 1
-                logger.info(f"✅ Transação {transacao.fatura_ref} atualizada para ESCROW")
-
-            except Exception as e:
-                logger.error(f"❌ Erro ao processar transação {transacao.fatura_ref}: {str(e)}")
-                continue
-
-        logger.info(f"--- ✅ Auditoria Concluída: {count} transações processadas ---")
-        return f"{count} entregas verificadas."
-
-    except Exception as exc:
-        logger.error(f"❌ Erro crítico na tarefa de auditoria: {str(exc)}")
-        raise self.retry(exc=exc, countdown=120)  # Retry em 2 minutos
+        except Exception as e:
+            logger.error(f"Erro ao cancelar reserva #{reserva.id}: {str(e)}")
+            
+    return f"{contador} reservas expiradas foram canceladas."
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=120)
-def enviar_fatura_email(self, transacao_id):
+# ===========================================
+# 2. EXPIRAR SAFRAS ANTIGAS
+# ===========================================
+@shared_task(name='marketplace.tasks.verificar_safras_expiradas')
+def verificar_safras_expiradas():
     """
-    Tarefa assíncrona para gerar e enviar fatura por email.
+    Muda o status de safras cuja data de validade ou expiração passou.
     """
-    try:
-        transacao = Transacao.ativas().filter(id=transacao_id).first()
-
-        if not transacao:
-            logger.warning(f"Transação {transacao_id} não encontrada para envio de email")
-            return "Transação não encontrada."
-
-        logger.info(f"📧 Gerando fatura para Ref: {transacao.fatura_ref}")
-
-        # Assunto e corpo do email
-        assunto = f"Fatura AgroKongo - {transacao.fatura_ref}"
-        mensagem = f"""
-        Olá {transacao.comprador.username},
-
-        Sua transação foi confirmada!
-
-        Detalhes:
-        - Fatura: {transacao.fatura_ref}
-        - Produto: {transacao.safra.produto.nome}
-        - Quantidade: {transacao.quantidade_comprada}
-        - Valor Total: {transacao.valor_total_pago} KZ
-        - Comissão: {transacao.comissao_plataforma} KZ
-
-        Obrigado por usar AgroKongo!
-        """
-
-        # Enviar email
-        send_mail(
-            subject=assunto,
-            message=mensagem,
-            from_email='noreply@agrokongo.ao',
-            recipient_list=[transacao.comprador.email],
-            fail_silently=False,
-        )
-
-        # Também envia para o vendedor
-        send_mail(
-            subject=f"Venda Confirmada - {transacao.fatura_ref}",
-            message=f"Olá {transacao.vendedor.username},\n\nSua venda foi confirmada!\n\nValor Líquido: {transacao.valor_liquido_vendedor} KZ",
-            from_email='noreply@agrokongo.ao',
-            recipient_list=[transacao.vendedor.email],
-            fail_silently=False,
-        )
-
-        logger.info(f"✅ Emails enviados para {transacao.comprador.email} e {transacao.vendedor.email}")
-        return f"Faturas enviadas com sucesso."
-
-    except Exception as exc:
-        logger.error(f"❌ Erro ao enviar email da fatura {transacao_id}: {str(exc)}")
-        raise self.retry(exc=exc, countdown=300)  # Retry em 5 minutos
+    agora = timezone.now()
+    
+    # Safras ativas que já passaram da data de expiração
+    safras_expiradas = Safra.objects.filter(
+        status='active',
+        data_expiracao__lte=agora
+    )
+    
+    contador = safras_expiradas.update(status='expired')
+    logger.info(f"{contador} safras marcadas como expiradas.")
+    
+    return f"{contador} safras expiradas."
 
 
-@shared_task(bind=True, max_retries=3)
-def enviar_notificacao_auditoria(self, transacao_id):
-    """
-    Envia notificação interna sobre auditoria automática.
-    """
-    from core.models import Notificacao
-
-    try:
-        transacao = Transacao.ativas().filter(id=transacao_id).first()
-        if not transacao:
-            return
-
-        # Notifica comprador
-        Notificacao.objects.create(
-            usuario=transacao.comprador,
-            mensagem=f'Auditoria automática: Sua transação {transacao.fatura_ref} foi atualizada para ESCROW.',
-            link=f'/transacoes/{transacao.id}/'
-        )
-
-        # Notifica vendedor
-        Notificacao.objects.create(
-            usuario=transacao.vendedor,
-            mensagem=f'Auditoria automática: Transação {transacao.fatura_ref} atualizada para ESCROW.',
-            link=f'/transacoes/{transacao.id}/'
-        )
-
-        logger.info(f"✅ Notificações de auditoria enviadas para {transacao.fatura_ref}")
-
-    except Exception as exc:
-        logger.error(f"❌ Erro ao enviar notificação de auditoria: {str(exc)}")
-        raise self.retry(exc=exc, countdown=60)
-
-
-@shared_task
+# ===========================================
+# 3. ENVIAR RESUMO DIÁRIO (MOCKUP)
+# ===========================================
+@shared_task(name='marketplace.tasks.enviar_resumo_diario')
 def enviar_resumo_diario():
-    """
-    Envia resumo diário de transações para admins.
-    Roda diariamente às 8 AM.
-    """
-    try:
-        logger.info("📊 Gerando resumo diário de transações...")
+    """Gera um resumo das vendas do dia para os administradores."""
+    hoje = timezone.now().date()
+    vendas_hoje = Reserva.objects.filter(status='concluida', data_conclusao__date=hoje).count()
+    return f"Resumo do dia {hoje}: {vendas_hoje} vendas concluídas."
 
-        ontem = timezone.now().date() - timedelta(days=1)
-
-        # Estatísticas do dia anterior
-        transacoes_ontem = Transacao.ativas().filter(
-            data_criacao__date=ontem
-        )
-
-        total_transacoes = transacoes_ontem.count()
-        total_valor = transacoes_ontem.aggregate(total=Sum('valor_total_pago'))['total'] or Decimal('0.00')
-        total_comissao = transacoes_ontem.aggregate(total=Sum('comissao_plataforma'))['total'] or Decimal('0.00')
-
-        # Envia para admins
-        admins = Usuario.objects.filter(tipo='admin', is_active=True)
-
-        for admin in admins:
-            send_mail(
-                subject=f'Resumo Diário AgroKongo - {ontem}',
-                message=f"""
-                Olá {admin.username},
-
-                Resumo de {ontem}:
-
-                📦 Total de Transações: {total_transacoes}
-                💰 Valor Total: {total_valor} KZ
-                🏦 Comissão da Plataforma: {total_comissao} KZ
-
-                AgroKongo - Marketplace Agrícola
-                """,
-                from_email='noreply@agrokongo.ao',
-                recipient_list=[admin.email],
-                fail_silently=False,
-            )
-
-        logger.info(f"✅ Resumo diário enviado para {admins.count()} admins")
-        return f"Resumo enviado para {admins.count()} admins"
-
-    except Exception as e:
-        logger.error(f"❌ Erro no resumo diário: {str(e)}")
-        return f"Erro: {str(e)}"
-
-
-@shared_task(bind=True, max_retries=3)
-def atualizar_rating_vendedor(self, vendedor_id):
-    """
-    Atualiza o rating médio de um vendedor após nova avaliação.
-    """
-    try:
-        vendedor = Usuario.objects.filter(id=vendedor_id, tipo='produtor').first()
-
-        if not vendedor:
-            return "Vendedor não encontrado."
-
-        # Calcula média de todas as avaliações
-        media = Avaliacao.objects.filter(
-            transacao__vendedor=vendedor
-        ).aggregate(media=Avg('nota'))['media']
-
-        if media:
-            vendedor.rating_vendedor = Decimal(str(media)).quantize(Decimal('0.01'))
-            vendedor.save(update_fields=['rating_vendedor'])
-
-            logger.info(f"✅ Rating de {vendedor.username} atualizado para {vendedor.rating_vendedor}")
-            return f"Rating atualizado: {vendedor.rating_vendedor}"
-
-        return "Sem avaliações para calcular média."
-
-    except Exception as exc:
-        logger.error(f"❌ Erro ao atualizar rating: {str(exc)}")
-        raise self.retry(exc=exc, countdown=60)
-
-
-@shared_task
-def limpar_transacoes_canceladas():
-    """
-    Limpa transações canceladas com mais de 30 dias (soft delete).
-    """
-    try:
-        logger.info("🧹 Limpando transações canceladas antigas...")
-
-        limite = timezone.now() - timedelta(days=30)
-
-        transacoes = Transacao.ativas().filter(
-            status=TransactionStatus.CANCELADO,
-            data_criacao__lte=limite
-        )
-
-        count = transacoes.count()
-
-        # Soft delete
-        transacoes.update(deleted_at=timezone.now())
-
-        logger.info(f"✅ {count} transações canceladas arquivadas")
-        return f"{count} transações arquivadas"
-
-    except Exception as e:
-        logger.error(f"❌ Erro na limpeza: {str(e)}")
-        return f"Erro: {str(e)}"
+@shared_task(name='marketplace.tasks.job_verificar_entregas')
+def job_verificar_entregas():
+    """Placeholder para auditoria de entregas estagnadas."""
+    return "Verificação de entregas concluída."

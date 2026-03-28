@@ -2,151 +2,119 @@ from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 import re
-from .models import Usuario
+from .models import Usuario, Levantamento
 
+
+# ===========================================
+# USUÁRIO SERIALIZERS
+# ===========================================
+
+class UsuarioPublicoSerializer(serializers.ModelSerializer):
+    """
+    Serializer para exibição pública (Vitrine/Marketplace).
+    Exclui dados sensíveis como IBAN, Saldo e NIF.
+    """
+    class Meta:
+        model = Usuario
+        fields = ['id', 'username', 'foto_perfil', 'rating_vendedor', 'tipo', 'provincia', 'municipio']
 
 class UsuarioSerializer(serializers.ModelSerializer):
-    """Serializer para leitura/edição de perfil de usuário"""
-    provincia_nome = serializers.CharField(source='provincia.nome', read_only=True)
-    municipio_nome = serializers.CharField(source='municipio.nome', read_only=True)
-
+    """
+    Serializer completo e PRIVADO. 
+    Usado apenas no endpoint /me/ ou pelo próprio usuário.
+    """
     class Meta:
         model = Usuario
         fields = [
-            'id', 'username', 'email', 'telemovel', 'tipo', 'nif', 'iban',
-            'rating_vendedor', 'vendas_concluidas', 'foto_perfil', 'documento_pdf',
-            'perfil_completo', 'conta_validada', 'provincia', 'municipio',
-            'provincia_nome', 'municipio_nome', 'saldo_disponivel', 'data_cadastro',
-            'first_name', 'last_name'
+            'id', 'username', 'email', 'telemovel', 'tipo', 'nif', 'iban', 'banco',
+            'saldo_disponivel', 'vendas_concluidas', 'perfil_completo', 'conta_validada',
+            'provincia', 'municipio', 'data_cadastro', 'first_name', 'last_name', 'foto_perfil'
         ]
-        read_only_fields = [
-            'id', 'data_cadastro', 'saldo_disponivel', 'rating_vendedor',
-            'vendas_concluidas', 'conta_validada'
-        ]
-
+        read_only_fields = ['id', 'saldo_disponivel', 'vendas_concluidas', 'conta_validada', 'data_cadastro']
 
 class UsuarioRegistroSerializer(serializers.ModelSerializer):
-    """Serializer para registro de novos usuários"""
-    senha = serializers.CharField(
-        write_only=True,
-        required=True,
-        min_length=6,
-        style={'input_type': 'password'}
-    )
-    senha_confirmacao = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
+    """Serializer para registro Passo 1"""
+    senha = serializers.CharField(write_only=True, required=True, min_length=6)
+    senha_confirmacao = serializers.CharField(write_only=True, required=True)
 
     class Meta:
         model = Usuario
-        fields = [
-            'username', 'email', 'telemovel', 'senha', 'senha_confirmacao',
-            'tipo', 'nif', 'first_name', 'last_name'
-        ]
-        extra_kwargs = {
-            'email': {'required': False, 'allow_blank': True},
-            'telemovel': {'required': True},
-            'tipo': {'required': False},
-            'username': {'required': False},
-            'first_name': {'required': False},
-            'last_name': {'required': False},
-        }
-
-    def validate_telemovel(self, value):
-        """Valida formato de telemóvel angolano"""
-        num = re.sub(r'\D', '', value)
-        if num.startswith('244'):
-            num = num[3:]
-        if not re.match(r'^9\d{8}$', num):
-            raise serializers.ValidationError('Formato de telemóvel angolano inválido (9xxxxxxxx).')
-        
-        if Usuario.objects.filter(telemovel=value).exists():
-            raise serializers.ValidationError('Este número de telemóvel já está registrado.')
-        return value
-
-    def validate_senha(self, value):
-        """Valida a senha usando os validadores do Django"""
-        try:
-            # Passamos o usuário como None pois ele ainda não existe
-            validate_password(value)
-        except DjangoValidationError as e:
-            raise serializers.ValidationError(list(e.messages))
-        return value
+        fields = ['username', 'telemovel', 'senha', 'senha_confirmacao']
+        extra_kwargs = {'username': {'required': False}}
 
     def validate(self, attrs):
-        """Valida se as senhas coincidem e define o username"""
-        if attrs.get('senha') != attrs.get('senha_confirmacao'):
+        if attrs['senha'] != attrs['senha_confirmacao']:
             raise serializers.ValidationError({'senha_confirmacao': 'As senhas não coincidem.'})
-
-        # Define username como telemovel se não for fornecido
-        if not attrs.get('username'):
-            attrs['username'] = attrs.get('telemovel')
-
-        # Verifica se o username já existe
-        if Usuario.objects.filter(username=attrs['username']).exists():
-            raise serializers.ValidationError({'username': 'Este nome de usuário ou telemóvel já está em uso.'})
-
-        # Valida tipo de usuário (se fornecido)
-        tipo = attrs.get('tipo')
-        if tipo and tipo not in ['admin', 'produtor', 'comprador']:
-            raise serializers.ValidationError({'tipo': 'Tipo de usuário inválido.'})
-
         return attrs
 
     def create(self, validated_data):
-        """Cria usuário com senha hasheada automaticamente"""
         validated_data.pop('senha_confirmacao')
         senha = validated_data.pop('senha')
-
-        # Lógica para simplificar o Passo 1 do registro
         username = validated_data.get('username') or validated_data.get('telemovel')
-        email = validated_data.get('email', '')
-        tipo = validated_data.get('tipo', 'produtor')
+        user = Usuario.objects.create_user(username=username, password=senha, **validated_data)
+        user.conta_validada = True 
+        user.save()
+        return user
 
-        usuario = Usuario.objects.create_user(
-            username=username,
-            email=email,
-            telemovel=validated_data['telemovel'],
-            tipo=tipo,
-            nif=validated_data.get('nif'),
-            first_name=validated_data.get('first_name', ''),
-            last_name=validated_data.get('last_name', ''),
-            password=senha
-        )
-
-        # Por padrão para facilitar testes, vamos validar a conta (opcional)
-        # Em produção, isto seria feito via SMS ou Admin
-        usuario.conta_validada = True 
-        usuario.save()
-
-        # Verifica se o perfil está completo
-        usuario.verificar_e_atualizar_perfil()
-
-        return usuario
-
-
+class UsuarioPerfilSerializer(serializers.ModelSerializer):
+    """Serializer para registro Passo 2"""
+    class Meta:
+        model = Usuario
+        fields = ['tipo', 'first_name', 'last_name', 'nif', 'iban', 'banco', 'provincia', 'municipio', 'foto_perfil']
+        extra_kwargs = {'tipo': {'required': True}}
 
 class UsuarioLoginSerializer(serializers.Serializer):
-    """Serializer para login com username/telemóvel/email + password"""
+    """Serializer para login"""
     username = serializers.CharField(required=False)
     email = serializers.EmailField(required=False)
-    telemovel = serializers.CharField(required=False, max_length=9)
+    telemovel = serializers.CharField(required=False)
     password = serializers.CharField(write_only=True, required=True)
 
-    def validate(self, data):
-        # Pelo menos um campo é obrigatório
-        if not data.get('username') and not data.get('email') and not data.get('telemovel'):
-            raise serializers.ValidationError(
-                'Informe username, email ou telemóvel para fazer login.'
-            )
-        return data
-
-
 class UsuarioUpdatePasswordSerializer(serializers.Serializer):
-    """Serializer para mudar senha do usuário"""
+    """Serializer para mudar senha"""
     senha_atual = serializers.CharField(write_only=True, required=True)
     nova_senha = serializers.CharField(write_only=True, required=True, validators=[validate_password])
     nova_senha_confirmacao = serializers.CharField(write_only=True, required=True)
 
+class UsuarioListSerializer(serializers.ModelSerializer):
+    """Serializer simplificado para listagem (Admin)"""
+    class Meta:
+        model = Usuario
+        fields = ['id', 'username', 'tipo', 'telemovel', 'saldo_disponivel', 'conta_validada']
+
+
+# ===========================================
+# LEVANTAMENTO SERIALIZERS
+# ===========================================
+class LevantamentoSerializer(serializers.ModelSerializer):
+    """Serializer para pedidos de levantamento"""
+    usuario_nome = serializers.CharField(source='usuario.username', read_only=True)
+
+    class Meta:
+        model = Levantamento
+        fields = [
+            'id', 'usuario', 'usuario_nome', 'valor', 'iban_destino', 'banco_destino',
+            'status', 'data_pedido', 'data_processamento', 'comprovativo_transferencia', 'observacoes'
+        ]
+        read_only_fields = ['id', 'usuario', 'status', 'data_pedido', 'data_processamento', 'processado_por']
+
+    def validate_valor(self, value):
+        if value < 500:
+            raise serializers.ValidationError('O valor mínimo de levantamento é 500 Kz.')
+        return value
+
     def validate(self, attrs):
-        if attrs['nova_senha'] != attrs['nova_senha_confirmacao']:
-            raise serializers.ValidationError({"nova_senha": "As novas senhas não coincidem."})
+        user = self.context['request'].user
+        if user.saldo_disponivel < attrs['valor']:
+            raise serializers.ValidationError({'valor': 'Saldo insuficiente para realizar este levantamento.'})
         return attrs
+
+    def create(self, validated_data):
+        validated_data['usuario'] = self.context['request'].user
+        validated_data['iban_destino'] = validated_data.get('iban_destino') or validated_data['usuario'].iban
+        validated_data['banco_destino'] = validated_data.get('banco_destino') or validated_data['usuario'].banco
+        
+        if not validated_data['iban_destino']:
+            raise serializers.ValidationError({'iban_destino': 'Informe o IBAN de destino no seu perfil ou no pedido.'})
+            
+        return super().create(validated_data)

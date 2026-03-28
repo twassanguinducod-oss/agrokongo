@@ -1,80 +1,114 @@
+# core/serializers.py
 from rest_framework import serializers
-from .models import Notificacao, Mensagem, LogAuditoria, AlertaPreferencia
-from accounts.serializers import UsuarioSerializer
-from marketplace.serializers import ProdutoSerializer, TransacaoSerializer
+from .models import Notificacao, Mensagem, AlertaPreferencia, LogAuditoria
 
 
+# ===========================================
+# NOTIFICAÇÃO SERIALIZER
+# ===========================================
 class NotificacaoSerializer(serializers.ModelSerializer):
-    """Serializer para Notificações"""
+    """Serializer para notificações"""
 
     class Meta:
         model = Notificacao
-        fields = ['id', 'usuario', 'mensagem', 'link', 'lida', 'data_criacao']
-        read_only_fields = ['id', 'usuario', 'data_criacao']
+        fields = [
+            'id',
+            'usuario',
+            'titulo',
+            'mensagem',
+            'tipo',
+            'lida',
+            'data_criacao',
+            'data_leitura',
+        ]
+        read_only_fields = ['usuario', 'data_criacao', 'data_leitura']
 
 
-class NotificacaoMarkAsReadSerializer(serializers.Serializer):
-    """Serializer para marcar notificação como lida"""
-    ids = serializers.ListField(child=serializers.IntegerField(), required=True)
+class NotificacaoCreateSerializer(serializers.ModelSerializer):
+    """Serializer para criar notificação"""
+
+    class Meta:
+        model = Notificacao
+        fields = ['titulo', 'mensagem', 'tipo']
 
 
+# ===========================================
+# MENSAGEM SERIALIZER
+# ===========================================
 class MensagemSerializer(serializers.ModelSerializer):
-    """Serializer para Mensagens (Chat)"""
-    remetente_nome = serializers.CharField(source='remetente.username', read_only=True)
-    destinatario_nome = serializers.CharField(source='destinatario.username', read_only=True)
+    """Serializer para mensagens"""
+    usuario_nome = serializers.CharField(source='usuario.username', read_only=True)
+    respondido_por_nome = serializers.CharField(source='respondido_por.username', read_only=True)
 
     class Meta:
         model = Mensagem
         fields = [
-            'id', 'transacao', 'remetente', 'destinatario',
-            'remetente_nome', 'destinatario_nome', 'conteudo', 'data_envio', 'lida'
+            'id',
+            'usuario',
+            'usuario_nome',
+            'assunto',
+            'conteudo',
+            'tipo',
+            'status',
+            'resposta',
+            'respondido_por',
+            'respondido_por_nome',
+            'data_criacao',
+            'data_resposta',
         ]
-        read_only_fields = ['id', 'data_envio', 'remetente']
-
-    def validate(self, attrs):
-        request = self.context.get('request')
-        transacao = attrs.get('transacao')
-
-        if request and transacao:
-            # Apenas participantes da transação podem enviar mensagens
-            if request.user not in [transacao.comprador, transacao.vendedor]:
-                raise serializers.ValidationError('Apenas participantes da transação podem enviar mensagens.')
-
-        return attrs
-
-    def create(self, validated_data):
-        request = self.context['request']
-        transacao = validated_data['transacao']
-
-        # Define destinatário automaticamente
-        if request.user == transacao.comprador:
-            validated_data['destinatario'] = transacao.vendedor
-        else:
-            validated_data['destinatario'] = transacao.comprador
-
-        validated_data['remetente'] = request.user
-        return super().create(validated_data)
+        read_only_fields = ['usuario', 'respondido_por', 'data_criacao', 'data_resposta']
 
 
+class MensagemCreateSerializer(serializers.ModelSerializer):
+    """Serializer para criar mensagem"""
+
+    class Meta:
+        model = Mensagem
+        fields = ['assunto', 'conteudo', 'tipo']
+
+
+# ===========================================
+# ALERTA PREFERÊNCIA SERIALIZER
+# ===========================================
+class AlertaPreferenciaSerializer(serializers.ModelSerializer):
+    """Serializer para alertas de preferência"""
+    produto_nome = serializers.CharField(source='produto.nome', read_only=True)
+
+    class Meta:
+        model = AlertaPreferencia
+        fields = [
+            'id',
+            'usuario',
+            'produto',
+            'produto_nome',
+            'preco_minimo',
+            'preco_maximo',
+            'ativo',
+            'data_criacao',
+        ]
+        read_only_fields = ['usuario', 'data_criacao']
+
+
+# ===========================================
+# LOG AUDITORIA SERIALIZER
+# ===========================================
 class LogAuditoriaSerializer(serializers.ModelSerializer):
-    """Serializer para Logs de Auditoria (Admin)"""
+    """Serializer para logs de auditoria"""
     usuario_nome = serializers.CharField(source='usuario.username', read_only=True)
 
     class Meta:
         model = LogAuditoria
-        fields = ['id', 'usuario', 'usuario_nome', 'acao', 'detalhes', 'ip', 'data_criacao']
-        read_only_fields = ['id', 'data_criacao']
-
-
-class AlertaPreferenciaSerializer(serializers.ModelSerializer):
-    """Serializer para Alertas de Preferência"""
-    produto = ProdutoSerializer(read_only=True)
-
-    class Meta:
-        model = AlertaPreferencia
-        fields = ['id', 'usuario', 'produto', 'data_criacao']
-        read_only_fields = ['id', 'usuario', 'data_criacao']
-
-    def create(self, validated_data):
-        validated_data['usuario'] = self.context['request'].user
-        return super().create(validated_data)
+        fields = [
+            'id',
+            'usuario',
+            'usuario_nome',
+            'acao',
+            'tabela_afetada',
+            'registro_id',
+            'descricao',
+            'ip_address',
+            'dados_antigos',
+            'dados_novos',
+            'data_criacao',
+        ]
+        read_only_fields = ['usuario', 'data_criacao']

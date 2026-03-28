@@ -13,12 +13,17 @@ from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get(
-    'DJANGO_SECRET_KEY',
-    'django-insecure-pe(s6_*+4d+=%di1c%7k#(iuu)g#lm3r7c0!xr65oq8!cqet_q'
-)
+# ✅ CONFIGURAÇÃO DE MEDIA (UPLOAD DE FICHEIROS)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() == 'true'
+# Limitar tamanho de upload (5MB)
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024  # 5MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024  # 5MB
+
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
+
+DEBUG = os.environ.get('DJANGO_DEBUG', 'False').lower() == 'true'
 
 ALLOWED_HOSTS = [
     'localhost',
@@ -100,9 +105,9 @@ WSGI_APPLICATION = 'agrokongo.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'agrokongo_db'),
-        'USER': os.environ.get('DB_USER', 'postgres'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'MessiKi@my010822'),
+        'NAME': os.environ.get('DB_NAME'),
+        'USER': os.environ.get('DB_USER'),
+        'PASSWORD': os.environ.get('DB_PASSWORD'),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
         'PORT': os.environ.get('DB_PORT', '5432'),
         'CONN_MAX_AGE': 600,
@@ -161,7 +166,7 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
     'ALGORITHM': 'HS256',
-    'SIGNING_KEY': SECRET_KEY,
+    'SIGNING_KEY': SECRET_KEY or 'fallback-para-desenvolvimento-apenas',
     'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
 }
@@ -176,7 +181,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated', # 🛡️ SEGURANÇA: Alterado de AllowAny
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
@@ -283,15 +288,39 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'Marketplace Agrícola para Angola',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
-    'COMPONENT_SPLIT_REQUEST': True,
-    'SECURITY': [{'bearerAuth': []}],
-    'SECURITY_SCHEMES': {
-        'bearerAuth': {
-            'type': 'http',
-            'scheme': 'bearer',
-            'bearerFormat': 'JWT',
-        }
+
+    # ✅ RESOLVER ENUM COLLISIONS
+    'ENUM_NAME_OVERRIDES': {
+        # Accounts
+        'UsuarioTipoEnum': 'accounts.models.Usuario.TIPO_CHOICES',
+
+        # Marketplace - Safra
+        'SafraStatusEnum': 'marketplace.models.Safra.STATUS_CHOICES',
+        'SafraQualidadeEnum': 'marketplace.models.Safra.QUALIDADE_CHOICES',
+
+        # Marketplace - Reserva
+        'ReservaStatusEnum': 'marketplace.models.Reserva.STATUS_CHOICES',
+
+        # Marketplace - Pagamento
+        'PagamentoStatusEnum': 'marketplace.models.Pagamento.STATUS_CHOICES',
+        'PagamentoMetodoEnum': 'marketplace.models.Pagamento.METODO_CHOICES',
+
+        # Core - Notificacao
+        'NotificacaoTipoEnum': 'core.models.Notificacao.TIPO_CHOICES',
+
+        # Core - Mensagem
+        'MensagemStatusEnum': 'core.models.Mensagem.STATUS_CHOICES',
+
+        # Core - LogAuditoria
+        'LogAuditoriaAcaoEnum': 'core.models.LogAuditoria.ACAO_CHOICES',
     },
+
+    # ✅ NOMES MAIS CLAROS
+    'COMPONENT_SPLIT_REQUEST': True,
+    'CONVERT_PATH_PARAM_WITH_DOUBLE_BRACKET': True,
+
+    # ✅ PREVENIR WARNINGS
+    'ENUM_ADD_EXPLICIT_BLANK_NULL_CHOICE': False,
 }
 
 # ===========================================

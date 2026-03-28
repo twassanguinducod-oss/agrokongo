@@ -1,136 +1,147 @@
 # core/views.py
-"""
-ViewSets para Core (Notificações, Mensagens, Logs, Alertas)
-"""
 from rest_framework import viewsets, status, permissions, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Q
-from drf_spectacular.utils import extend_schema, OpenApiParameter
-from drf_spectacular.types import OpenApiTypes
-
-from .models import Notificacao, Mensagem, LogAuditoria, AlertaPreferencia
+from django_filters.rest_framework import DjangoFilterBackend
+from .models import Notificacao, Mensagem, AlertaPreferencia, LogAuditoria
 from .serializers import (
-    NotificacaoSerializer, NotificacaoMarkAsReadSerializer,
+    NotificacaoSerializer,
+    NotificacaoCreateSerializer,
     MensagemSerializer,
+    MensagemCreateSerializer,
+    AlertaPreferenciaSerializer,
     LogAuditoriaSerializer,
-    AlertaPreferenciaSerializer
 )
 
 
+# ===========================================
+# NOTIFICAÇÃO VIEWSET
+# ===========================================
 class NotificacaoViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet para Notificações do usuário.
-    """
+    """ViewSet para notificações"""
     serializer_class = NotificacaoSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    ordering = ['-data_criacao']
-
-    def get_queryset(self):
-        return Notificacao.objects.filter(usuario=self.request.user)
-
-    def perform_create(self, serializer):
-        serializer.save(usuario=self.request.user)
-
-    @extend_schema(
-        summary='Marcar notificações como lidas',
-        description='Marca múltiplas notificações como lidas.',
-        tags=['core'],
-        request=NotificacaoMarkAsReadSerializer,
-        responses={200: {'type': 'object', 'properties': {'atualizadas': {'type': 'integer'}}}},
-    )
-    @action(detail=False, methods=['post'], url_path='marcar-lidas')
-    def mark_as_read(self, request):
-        """Marcar múltiplas notificações como lidas"""
-        serializer = NotificacaoMarkAsReadSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        ids = serializer.validated_data['ids']
-        atualizadas = Notificacao.objects.filter(
-            usuario=request.user,
-            id__in=ids
-        ).update(lida=True)
-
-        return Response({'atualizadas': atualizadas})
-
-    @action(detail=False, methods=['get'], url_path='nao-lidas/count')
-    def count_unread(self, request):
-        """Contagem rápida de notificações não lidas"""
-        count = Notificacao.objects.filter(
-            usuario=request.user,
-            lida=False
-        ).count()
-        return Response({'count': count})
-
-
-class MensagemViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet para Mensagens (Chat por transação).
-    """
-    serializer_class = MensagemSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    ordering = ['data_envio']
-
-    def get_queryset(self):
-        transacao_id = self.request.query_params.get('transacao')
-
-        if transacao_id:
-            return Mensagem.objects.filter(
-                transacao_id=transacao_id,
-                transacao__in=[
-                    t.id for t in self.request.user.compras.all() | self.request.user.vendas.all()
-                ]
-            )
-
-        return Mensagem.objects.filter(
-            Q(remetente=self.request.user) | Q(destinatario=self.request.user)
-        )
-
-    def perform_create(self, serializer):
-        serializer.save(remetente=self.request.user)
-
-    @action(detail=False, methods=['post'], url_path='marcar-lidas')
-    def mark_as_read(self, request):
-        """Marcar mensagens recebidas como lidas"""
-        transacao_id = request.data.get('transacao_id')
-
-        if not transacao_id:
-            return Response(
-                {'error': 'transacao_id é obrigatório'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        atualizadas = Mensagem.objects.filter(
-            destinatario=request.user,
-            transacao_id=transacao_id,
-            lida=False
-        ).update(lida=True)
-
-        return Response({'atualizadas': atualizadas})
-
-
-class AlertaPreferenciaViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet para Alertas de Preferência de Produto.
-    """
-    serializer_class = AlertaPreferenciaSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        return AlertaPreferencia.objects.filter(usuario=self.request.user)
-
-    def perform_create(self, serializer):
-        serializer.save(usuario=self.request.user)
-
-
-class LogAuditoriaViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    ViewSet para Logs de Auditoria (APENAS ADMIN).
-    """
-    queryset = LogAuditoria.objects.select_related('usuario').all()
-    serializer_class = LogAuditoriaSerializer
-    permission_classes = [permissions.IsAdminUser]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['acao', 'detalhes', 'ip']
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['lida', 'tipo']
     ordering_fields = ['data_criacao']
     ordering = ['-data_criacao']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Notificacao.objects.none()
+        if self.request.user.is_authenticated:
+            return Notificacao.objects.filter(usuario=self.request.user)
+        return Notificacao.objects.none()
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return NotificacaoCreateSerializer
+        return NotificacaoSerializer
+
+    def get_permissions(self):
+        return [permissions.IsAuthenticated()]
+
+    @action(detail=False, methods=['get'])
+    def minhas(self, request):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'])
+    def marcar_lida(self, request, pk=None):
+        notificacao = self.get_object()
+        notificacao.lida = True
+        notificacao.save(update_fields=['lida'])
+        return Response({'success': True, 'message': 'Notificação marcada como lida'}, status=status.HTTP_200_OK)
+
+
+# ===========================================
+# MENSAGEM VIEWSET
+# ===========================================
+class MensagemViewSet(viewsets.ModelViewSet):
+    """ViewSet para mensagens de suporte"""
+    serializer_class = MensagemSerializer
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['status', 'tipo']
+    ordering_fields = ['data_criacao']
+    ordering = ['-data_criacao']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Mensagem.objects.none()
+        if not self.request.user.is_authenticated:
+            return Mensagem.objects.none()
+        if self.request.user.tipo == 'admin':
+            return Mensagem.objects.all()
+        return Mensagem.objects.filter(usuario=self.request.user)
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return MensagemCreateSerializer
+        return MensagemSerializer
+
+    def get_permissions(self):
+        if self.action == 'responder':
+            return [permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        serializer.save(usuario=self.request.user)
+
+    @action(detail=False, methods=['get'])
+    def minhas(self, request):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'])
+    def responder(self, request, pk=None):
+        mensagem = self.get_object()
+        resposta = request.data.get('resposta', '')
+        mensagem.resposta = resposta
+        mensagem.respondido_por = request.user
+        mensagem.status = 'respondido'
+        mensagem.save()
+        return Response({'success': True, 'message': 'Mensagem respondida'}, status=status.HTTP_200_OK)
+
+
+# ===========================================
+# ALERTA PREFERÊNCIA VIEWSET
+# ===========================================
+class AlertaPreferenciaViewSet(viewsets.ModelViewSet):
+    """ViewSet para alertas de preferência"""
+    serializer_class = AlertaPreferenciaSerializer
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['ativo', 'produto']
+    ordering_fields = ['data_criacao']
+    ordering = ['-data_criacao']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return AlertaPreferencia.objects.none()
+        if self.request.user.is_authenticated:
+            return AlertaPreferencia.objects.filter(usuario=self.request.user)
+        return AlertaPreferencia.objects.none()
+
+    def get_permissions(self):
+        return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        serializer.save(usuario=self.request.user)
+
+
+# ===========================================
+# LOG AUDITORIA VIEWSET
+# ===========================================
+class LogAuditoriaViewSet(viewsets.ModelViewSet):
+    """ViewSet para logs de auditoria (Apenas Admin)"""
+    serializer_class = LogAuditoriaSerializer
+    permission_classes = [permissions.IsAdminUser]  # ✅ CLASSE (sem parênteses)
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['acao', 'tabela_afetada', 'usuario']
+    ordering_fields = ['data_criacao']
+    ordering = ['-data_criacao']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return LogAuditoria.objects.none()
+        return LogAuditoria.objects.all()

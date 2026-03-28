@@ -19,25 +19,28 @@ app.autodiscover_tasks()
 # Configuração de Tarefas Agendadas (Celery Beat)
 # ===========================================
 app.conf.beat_schedule = {
-    # Auditoria de entregas estagnadas (a cada 1 hora)
-    'auditoria-entregas-cada-hora': {
+    # ⏱️ CANCELAR RESERVAS EXPIRADAS (A cada 30 minutos)
+    'cancelar-reservas-expiradas-30m': {
+        'task': 'marketplace.tasks.verificar_reservas_expiradas',
+        'schedule': 1800.0,  # 30 minutos em segundos
+    },
+
+    # ⏱️ EXPIRAR SAFRAS ANTIGAS (Diariamente às 00:05)
+    'expirar-safras-diario': {
+        'task': 'marketplace.tasks.verificar_safras_expiradas',
+        'schedule': crontab(hour=0, minute=5),
+    },
+
+    # Auditoria de entregas estagnadas (A cada 2 horas)
+    'auditoria-entregas-2h': {
         'task': 'marketplace.tasks.job_verificar_entregas',
-        'schedule': crontab(minute=0, hour='*/1'),  # A cada hora
-        'options': {'queue': 'celery'}
+        'schedule': crontab(minute=0, hour='*/2'),
     },
 
-    # Limpeza de sessões expiradas (diário às 3 AM)
-    'limpar-sessoes-diario': {
-        'task': 'core.tasks.limpar_sessoes_expiradas',
-        'schedule': crontab(hour=3, minute=0),  # 3 AM
-        'options': {'queue': 'celery'}
-    },
-
-    # Enviar resumo diário de transações (diário às 8 AM)
+    # Enviar resumo diário de transações (Diário às 8 AM)
     'resumo-diario-transacoes': {
         'task': 'marketplace.tasks.enviar_resumo_diario',
-        'schedule': crontab(hour=8, minute=0),  # 8 AM
-        'options': {'queue': 'celery'}
+        'schedule': crontab(hour=8, minute=0),
     },
 }
 
@@ -51,18 +54,13 @@ app.conf.update(
     timezone='Africa/Luanda',
     enable_utc=False,
     task_track_started=True,
-    task_time_limit=300,  # 5 minutos máximo por tarefa
-    task_soft_time_limit=240,  # 4 minutos soft limit
-    worker_prefetch_multiplier=1,  # Processa uma tarefa de cada vez
-    worker_max_tasks_per_child=1000,  # Recicla workers após 1000 tarefas
+    task_time_limit=300,
+    task_soft_time_limit=240,
+    worker_prefetch_multiplier=1,
+    worker_max_tasks_per_child=1000,
 )
 
-
-# ===========================================
-# Debug Task (para testes)
-# ===========================================
 @app.task(bind=True)
 def debug_task(self):
-    """Tarefa de teste para verificar se Celery está funcional."""
     print(f'Request: {self.request!r}')
     return 'Celery está funcional! ✅'

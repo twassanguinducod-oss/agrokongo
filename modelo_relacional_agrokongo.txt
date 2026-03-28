@@ -1,0 +1,101 @@
+========================================================================
+                      MODELO RELACIONAL - AGROKONGO
+========================================================================
+Versão: 1.0
+Data de Geração: 2024
+Projeto: Marketplace Agrícola para Angola (Django/PostgreSQL)
+
+------------------------------------------------------------------------
+1. MÓDULO: LOCALIZAÇÃO (locations)
+------------------------------------------------------------------------
+
+TABELA: provincias
+- id (BigInt, PK, Auto): Identificador único.
+- nome (Varchar(50), Unique, Not Null): Nome da província (ex: Luanda).
+
+TABELA: municipios
+- id (BigInt, PK, Auto): Identificador único.
+- nome (Varchar(50), Not Null): Nome do município.
+- provincia_id (BigInt, FK -> provincias, Not Null): Província vinculada.
+* Restrição: Unique Together (nome, provincia_id).
+
+------------------------------------------------------------------------
+2. MÓDULO: CONTAS E USUÁRIOS (accounts)
+------------------------------------------------------------------------
+
+TABELA: usuarios (Extensão do AbstractUser do Django)
+- id (BigInt, PK, Auto): Identificador único.
+- username (Varchar(150), Unique, Not Null): Identificador de login.
+- email (Varchar(254), Unique, Nullable): E-mail do usuário.
+- telemovel (Varchar(20), Unique, Not Null): Telefone principal (9xxxxxxxx).
+- tipo (Varchar(20), Not Null): ['admin', 'produtor', 'comprador'].
+- nif (Varchar(20), Unique, Nullable): Número de Identificação Fiscal.
+- iban (Varchar(34), Nullable): IBAN para recebimento (Produtores).
+- rating_vendedor (Decimal(3,2), Default: 5.00): Média de avaliações.
+- provincia_id (BigInt, FK -> provincias, Nullable): Localização.
+- municipio_id (BigInt, FK -> municipios, Nullable): Localização.
+- saldo_disponivel (Decimal(14,2), Default: 0.00): Saldo em carteira.
+- perfil_completo (Boolean, Default: False): Status de validação de dados.
+- conta_validada (Boolean, Default: False): Status de verificação administrativa.
+- data_cadastro (DateTime, Auto): Data de registro.
+
+------------------------------------------------------------------------
+3. MÓDULO: MARKETPLACE (marketplace)
+------------------------------------------------------------------------
+
+TABELA: produtos (Catálogo Geral)
+- id (BigInt, PK): Identificador único.
+- nome (Varchar(50), Unique, Not Null): Nome do produto (ex: Mandioca).
+- categoria (Varchar(50), Not Null): Categoria (ex: Tubérculos).
+
+TABELA: safras (Ofertas de Venda)
+- id (BigInt, PK): Identificador único.
+- produtor_id (BigInt, FK -> usuarios, Not Null): Dono da oferta.
+- produto_id (BigInt, FK -> produtos, Not Null): Tipo de produto.
+- quantidade_disponivel (Decimal(12,2), Not Null): Estoque disponível.
+- preco_por_unidade (Decimal(12,2), Not Null): Preço unitário em AOA.
+- status (Varchar(20), Default: 'disponivel'): ['disponivel', 'esgotado'].
+- data_criacao (DateTime, Auto): Data da oferta.
+
+TABELA: transacoes (Pedidos e Motor de Escrow)
+- id (BigInt, PK): Identificador único.
+- fatura_ref (Varchar(50), Unique, Index): Ex: AK-2024-XXXXXX.
+- safra_id (BigInt, FK -> safras, Protect): Referência à safra.
+- comprador_id (BigInt, FK -> usuarios, Not Null): Quem compra.
+- vendedor_id (BigInt, FK -> usuarios, Not Null): Quem vende.
+- quantidade_comprada (Decimal(12,2), Not Null): Volume da transação.
+- valor_total_pago (Decimal(14,2), Not Null): Valor bruto pago.
+- comissao_plataforma (Decimal(14,2), Default: 0.00): Taxa de 5%.
+- valor_liquido_vendedor (Decimal(14,2), Default: 0.00): 95% do total.
+- status (Varchar(30), Default: 'pendente'): Ciclo de vida do pedido.
+- transferencia_concluida (Boolean, Default: False): Liquidação financeira.
+- data_criacao (DateTime, Auto): Data do pedido.
+
+TABELA: historico_status (Logs de Auditoria)
+- id (BigInt, PK): Identificador único.
+- transacao_id (BigInt, FK -> transacoes, Not Null): Pedido associado.
+- status_anterior (Varchar(30), Not Null): Estado prévio.
+- status_novo (Varchar(30), Not Null): Novo estado.
+- data_mudanca (DateTime, Auto): Data da alteração.
+- observacao (Varchar(255), Nullable): Motivo da mudança.
+
+TABELA: avaliacoes
+- id (BigInt, PK): Identificador único.
+- transacao_id (BigInt, FK -> transacoes, Not Null): Venda avaliada.
+- nota (Integer, Not Null): Avaliação de 1 a 5 estrelas.
+- comentario (Text, Nullable): Feedback do comprador.
+
+------------------------------------------------------------------------
+RELACIONAMENTOS CHAVE (Cardinalidade)
+------------------------------------------------------------------------
+1. Provincia (1) -> Municipio (N)
+2. Municipio (1) -> Usuario (N)
+3. Usuario (1) -> Safra (N) [Como Vendedor]
+4. Usuario (1) -> Transacao (N) [Como Comprador ou Vendedor]
+5. Safra (1) -> Transacao (N)
+6. Transacao (1) -> HistoricoStatus (N)
+7. Transacao (1) -> Avaliacao (1)
+
+========================================================================
+FIM DO DOCUMENTO
+========================================================================
