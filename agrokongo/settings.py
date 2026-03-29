@@ -6,11 +6,11 @@ Production-Ready Configuration
 import os
 from pathlib import Path
 from datetime import timedelta
-
+from dotenv import load_dotenv
 # ===========================================
 # 1. BASE CONFIGURATIONS
 # ===========================================
-
+load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ✅ CONFIGURAÇÃO DE MEDIA (UPLOAD DE FICHEIROS)
