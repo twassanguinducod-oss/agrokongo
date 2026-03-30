@@ -1,34 +1,35 @@
-# Usamos uma imagem leve de Python
-FROM python:3.11-slim
+# Dockerfile
+FROM python:3.13-slim
 
-# Instala dependências do sistema para WeasyPrint e Pillow
-RUN apt-get update && apt-get install -y \
-    python3-pip \
-    python3-cffi \
-    python3-brotli \
-    libpango-1.0-0 \
-    libharfbuzz0b \
-    libpangoft2-1.0-0 \
-    libjpeg-dev \
-    zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Definir variáveis de ambiente
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DJANGO_SETTINGS_MODULE=agrokongo.settings
 
-# Define o diretório de trabalho
+# Diretório de trabalho
 WORKDIR /app
 
-# Copia e instala dependências Python
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Instalar dependências do sistema
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copia o resto do código
+# Instalar dependências Python
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+# Copiar código do projeto
 COPY . .
 
-# Cria as pastas de storage e dá permissões
-RUN mkdir -p /app/data_storage/public /app/data_storage/private
-RUN chmod -R 755 /app/data_storage
+# Coletar arquivos estáticos
+RUN python manage.py collectstatic --noinput --clear
 
-# Porta padrão do Flask
-EXPOSE 5000
+# Criar pasta de logs
+RUN mkdir -p logs
 
-# Comando para iniciar com Gunicorn (4 workers para performance)
-CMD ["gunicorn", "--workers", "4", "--bind", "0.0.0.0:5000", "run:app"]
+# Expor porta
+EXPOSE 8000
+
+# Comando para iniciar
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "3", "agrokongo.wsgi:application"]

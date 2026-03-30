@@ -1,65 +1,28 @@
-# AgroKongo 🚜🇦🇴
-**Marketplace Agrícola Resiliente para Angola.**
+# 🌾 AgroKongo - Marketplace Agrícola para Angola 🇦🇴
 
-O AgroKongo é uma plataforma de intermediação agrícola de alto rigor técnico, focada em resolver o gap de confiança entre produtores e compradores através de um sistema de **Escrow Blindado** e validação rigorosa de identidade (KYC).
+API RESTful para conexão entre produtores e compradores de produtos agrícolas.
 
----
+## 📊 Progresso do Projeto
 
-## 🛡️ Auditoria de Segurança & Integridade (Backend Sênior)
-O backend foi submetido a uma auditoria rigorosa para garantir a segurança das transações financeiras:
+| Sprint | Funcionalidade | Pontos | Status |
+|---|---|---|---|
+| 1-2 | Autenticação + Perfil | 16 pts | ✅ 100% |
+| 3-4 | Marketplace Básico | 18 pts | ✅ 100% |
+| 5-6 | Reserva + Pagamento | 13 pts | ✅ 100% |
+| 7 | Minhas Encomendas | 13 pts | ✅ 100% |
+| 8 | Conteúdo Estático | 8 pts | ✅ 100% |
+| 9 | Docker + Infra | 5 pts | ✅ 100% |
+| 10 | Correção Bugs | 5 pts | ✅ 100% |
 
-*   **Atomicidade Financeira:** Uso de `@transaction.atomic` e `select_for_update()` do PostgreSQL para impedir Condições de Corrida (Race Conditions) em saldos e estoque.
-*   **Impossibilidade de Gasto Duplo:** Lógica de bloqueio ao nível de linha (Locking) para levantamentos e liberações de pagamento.
-*   **Escrow Administrativo:** Fluxo de 3 etapas (`Pago` -> `Recebido` -> `Liquidado`) mediado por auditoria administrativa para evitar cancelamentos indevidos de fundos em custódia.
-*   **Validação IBAN ISO 7064:** Implementação do algoritmo Módulo 97-10 para validação matemática de IBANs angolanos (AO06).
-*   **Proteção de Uploads:** Validação de MIME Type (Magic Numbers) em binários para prevenir ataques de execução remota (RCE).
-*   **Privacidade:** Segregação de dados sensíveis entre perfis públicos e privados via Serializers distintos.
-*   **Performance:** Dashboard otimizado com cache em memória via Redis.
+**Total: 78/78 pts (100%)** 🎉
 
----
+## 🚀 Como Rodar Localmente
 
-## 🏗️ Tech Stack
-*   **Backend:** Django 5 + Django REST Framework + Django-Filter.
-*   **Frontend:** Next.js 14 (App Router) + Tailwind CSS + Framer Motion.
-*   **Infraestrutura:** Redis (Cache), PostgreSQL (DB), Celery (Background Tasks).
-*   **Autenticação:** JWT (Stateless).
+### Opção 1: Docker (Recomendado)
 
----
+```bash
+# Build e iniciar todos os serviços
+docker-compose up --build
 
-## 📊 Estrutura de Pastas
-```plaintext
-├── accounts/           # Usuários, Saldo, Levantamentos e KYC
-├── marketplace/        # Safras, Reservas, Escrow e Pagamentos
-├── locations/          # Geo-localização (Províncias/Municípios)
-├── core/               # Notificações, Mensagens e Logs de Auditoria
-├── frontend/           # Aplicação Next.js
-└── static/media/       # Ficheiros estáticos e uploads (protegidos)
-```
-
----
-
-## 🚀 Como Executar (Desenvolvimento)
-
-1.  **Backend:**
-    ```bash
-    python -m venv .venv
-    source .venv/bin/activate  # ou .venv\Scripts\activate no Windows
-    pip install -r requirements.txt
-    python manage.py migrate
-    python manage.py runserver
-    ```
-
-2.  **Worker Celery (em outro terminal):**
-    ```bash
-    celery -A agrokongo worker --loglevel=info
-    ```
-
-3.  **Frontend:**
-    ```bash
-    cd frontend
-    npm install
-    npm run dev
-    ```
-
----
-© 2024 AgroKongo - Engenharia de Software para o Agronegócio Angolano.
+# Acessar API
+http://localhost:8000/api/docs/
