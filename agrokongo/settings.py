@@ -296,7 +296,6 @@ SPECTACULAR_SETTINGS = {
 
         # Marketplace - Safra
         'SafraStatusEnum': 'marketplace.models.Safra.STATUS_CHOICES',
-        'SafraQualidadeEnum': 'marketplace.models.Safra.QUALIDADE_CHOICES',
 
         # Marketplace - Reserva
         'ReservaStatusEnum': 'marketplace.models.Reserva.STATUS_CHOICES',

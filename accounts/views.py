@@ -6,7 +6,7 @@ from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db.models import Sum, Count, Q
 from django.utils import timezone
-from django.core.cache import cache # ✅ Importar cache
+from django.core.cache import cache
 from .models import Usuario, Levantamento
 from marketplace.models import Safra, Reserva, Pagamento
 from core.models import Notificacao, Mensagem
@@ -18,7 +18,7 @@ from .serializers import (
     UsuarioUpdatePasswordSerializer,
     UsuarioListSerializer,
     LevantamentoSerializer,
-    UsuarioPublicoSerializer, # ✅ Importar o novo serializer público
+    UsuarioPublicoSerializer,
 )
 
 
@@ -33,19 +33,23 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'create':
             return UsuarioRegistroSerializer
-        elif self.action == 'list': # ✅ Usar o ListSerializer para listagem de admin
+        elif self.action == 'list':
             return UsuarioListSerializer
-        elif self.action == 'retrieve': # ✅ Usar o PublicoSerializer para visualização pública
+        elif self.action == 'retrieve':
             return UsuarioPublicoSerializer
+        elif self.action in ['me', 'update_perfil', 'dashboard']:
+            return UsuarioSerializer
         return UsuarioSerializer
 
     def get_permissions(self):
         if self.action in ['create', 'login']:
             return [permissions.AllowAny()]
-        elif self.action in ['me', 'update_perfil', 'dashboard']: # ✅ Adicionar dashboard aqui
+        elif self.action in ['me', 'update_perfil', 'dashboard']:
             return [permissions.IsAuthenticated()]
-        elif self.action in ['list', 'retrieve']: # ✅ List e Retrieve podem ser públicos ou restritos
-            return [permissions.AllowAny()] # Ou IsAdminUser para list, IsAuthenticated para retrieve
+        elif self.action == 'list':
+            return [permissions.IsAdminUser()]
+        elif self.action == 'retrieve':
+            return [permissions.IsAuthenticatedOrReadOnly()]
         return [permissions.IsAuthenticated()]
 
     @action(detail=False, methods=['post'])
@@ -55,8 +59,8 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         user = authenticate(
-            username=serializer.validated_data.get('username') or 
-                     serializer.validated_data.get('email') or 
+            username=serializer.validated_data.get('username') or
+                     serializer.validated_data.get('email') or
                      serializer.validated_data.get('telemovel'),
             password=serializer.validated_data['password']
         )
@@ -80,7 +84,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         Retorna dados baseados no tipo de usuário.
         """
         user = request.user
-        cache_key = f'dashboard_stats_{user.tipo}_{user.id}' # Chave de cache única por usuário e tipo
+        cache_key = f'dashboard_stats_{user.tipo}_{user.id}'
         cached_data = cache.get(cache_key)
 
         if cached_data:
@@ -95,25 +99,27 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         if user.tipo == 'produtor':
             safras = Safra.objects.filter(produtor=user)
             reservas = Reserva.objects.filter(safra__produtor=user)
-            
+
             data.update({
                 'saldo_disponivel': user.saldo_disponivel,
                 'vendas_concluidas': user.vendas_concluidas,
                 'safras_ativas': safras.filter(status='active').count(),
-                'valor_em_escrow': reservas.filter(status='paga').aggregate(Sum('preco_total'))['preco_total__sum'] or 0,
+                'valor_em_escrow': reservas.filter(status='paga').aggregate(Sum('preco_total'))[
+                                       'preco_total__sum'] or 0,
                 'pedidos_para_entrega': reservas.filter(status='paga').count(),
             })
 
         # --- DASHBOARD COMPRADOR ---
         elif user.tipo == 'comprador':
             compras = Reserva.objects.filter(comprador=user)
-            
+
             data.update({
                 'total_reservas': compras.count(),
                 'compras_concluidas': compras.filter(status='concluida').count(),
                 'aguardando_pagamento': compras.filter(status='confirmada').count(),
-                'total_gasto': compras.filter(status='concluida').aggregate(Sum('preco_total'))['preco_total__sum'] or 0,
-                'favoritos': 0, # Implementar futuramente
+                'total_gasto': compras.filter(status='concluida').aggregate(Sum('preco_total'))[
+                                   'preco_total__sum'] or 0,
+                'favoritos': 0,
             })
 
         # --- DASHBOARD ADMIN ---
@@ -123,20 +129,25 @@ class UsuarioViewSet(viewsets.ModelViewSet):
                 'pagamentos_pendentes': Pagamento.objects.filter(status='pendente').count(),
                 'reservas_recebidas_aguardando_liberacao': Reserva.objects.filter(status='recebida').count(),
                 'mensagens_suporte_pendentes': Mensagem.objects.filter(status='pendente').count(),
-                'gmv_total': Reserva.objects.filter(status='concluida').aggregate(Sum('preco_total'))['preco_total__sum'] or 0,
-                'comissao_total_acumulada': Reserva.objects.filter(status='concluida').aggregate(Sum('comissao_plataforma'))['comissao_plataforma__sum'] or 0,
+                'gmv_total': Reserva.objects.filter(status='concluida').aggregate(Sum('preco_total'))[
+                                 'preco_total__sum'] or 0,
+                'comissao_total_acumulada':
+                    Reserva.objects.filter(status='concluida').aggregate(Sum('comissao_plataforma'))[
+                        'comissao_plataforma__sum'] or 0,
             })
-        
-        cache.set(cache_key, data, timeout=300) # Cache por 5 minutos (300 segundos)
+
+        cache.set(cache_key, data, timeout=300)  # Cache por 5 minutos
         return Response(data, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'])
     def me(self, request):
+        """Retorna dados do usuário autenticado."""
         serializer = UsuarioSerializer(request.user, context={'request': request})
         return Response(serializer.data)
 
     @action(detail=False, methods=['put'])
     def update_perfil(self, request):
+        """Atualiza perfil do usuário."""
         serializer = UsuarioPerfilSerializer(request.user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -169,21 +180,22 @@ class LevantamentoViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def aprovar(self, request, pk=None):
+        """Aprova levantamento (Admin)."""
         levantamento = self.get_object()
         comprovativo = request.data.get('comprovativo', '')
-        
+
         try:
             levantamento.aprovar(admin=request.user, comprovativo=comprovativo)
-            
+
             Notificacao.objects.create(
                 usuario=levantamento.usuario,
                 titulo='Levantamento Concluído! ✅',
                 mensagem=f'O seu pedido de levantamento de {levantamento.valor} Kz foi processado com sucesso. Verifique a sua conta bancária.',
                 tipo='sucesso'
             )
-            
+
             return Response({
-                'success': True, 
+                'success': True,
                 'message': 'Levantamento aprovado e saldo subtraído do produtor.',
                 'status': levantamento.status
             })
@@ -192,19 +204,20 @@ class LevantamentoViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def rejeitar(self, request, pk=None):
+        """Rejeita levantamento (Admin)."""
         levantamento = self.get_object()
         motivo = request.data.get('motivo', 'Motivo não especificado.')
-        
+
         try:
             levantamento.rejeitar(admin=request.user, motivo=motivo)
-            
+
             Notificacao.objects.create(
                 usuario=levantamento.usuario,
                 titulo='Levantamento Rejeitado ❌',
                 mensagem=f'O seu pedido de levantamento de {levantamento.valor} Kz foi rejeitado. Motivo: {motivo}',
                 tipo='erro'
             )
-            
+
             return Response({'success': True, 'message': 'Levantamento rejeitado.', 'motivo': motivo})
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

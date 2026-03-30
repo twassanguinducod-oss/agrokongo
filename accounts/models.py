@@ -9,7 +9,12 @@ import re
 
 class Usuario(AbstractUser):
     """Modelo de Usuário personalizado."""
-    TIPO_CHOICES = [('admin', 'Administrador'), ('produtor', 'Produtor'), ('comprador', 'Comprador')]
+    TIPO_CHOICES = [
+        ('admin', 'Administrador'),
+        ('produtor', 'Produtor'),
+        ('comprador', 'Comprador'),
+    ]
+
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, null=False)
     subtipo = models.CharField(max_length=50, null=True, blank=True)
     nif = models.CharField(max_length=20, null=True, blank=True)
@@ -24,11 +29,12 @@ class Usuario(AbstractUser):
     municipio = models.ForeignKey('locations.Municipio', on_delete=models.SET_NULL, null=True, blank=True)
     data_cadastro = models.DateTimeField(auto_now_add=True)
     foto_perfil = models.CharField(max_length=150, default='default_user.svg')
-    
+
     class Meta:
         db_table = 'usuarios'
 
-    def __str__(self): return f'{self.username} ({self.tipo})'
+    def __str__(self):
+        return f'{self.username} ({self.tipo})'
 
     def clean(self):
         """Executa validações rigorosas, incluindo Checksum de IBAN."""
@@ -53,12 +59,8 @@ class Usuario(AbstractUser):
             raise ValidationError('IBAN inválido. Deve começar com AO06 e ter 21 caracteres no total.')
 
         # 3. Algoritmo ISO 7064 (MOD 97-10)
-        # O IBAN angolano segue: AO06 + 17 dígitos
-        # Reorganizar para validação: 17 dígitos + AO06
-        # Converter letras para números: A=10, O=24
-        # AO06 vira 102406
         numeros_conta = iban_limpo[4:]
-        prefixo_convertido = "102406"
+        prefixo_convertido = "102406"  # AO06 → 102406
         numero_validacao = int(numeros_conta + prefixo_convertido)
 
         if numero_validacao % 97 != 1:
@@ -67,18 +69,73 @@ class Usuario(AbstractUser):
         return iban_limpo
 
     def verificar_e_atualizar_perfil(self):
-        if self.tipo == 'produtor' and not self.iban: return False
+        """Verifica se o perfil está completo."""
+        if self.tipo == 'produtor' and not self.iban:
+            return False
         self.perfil_completo = True
         self.save(update_fields=['perfil_completo'])
         return True
 
 
 class Levantamento(models.Model):
-    # ... (Modelo Levantamento mantido conforme última versão segura)
+    """Modelo para pedidos de levantamento de saldo."""
+    STATUS_CHOICES = [
+        ('pendente', 'Pendente'),
+        ('processado', 'Processado'),
+        ('aprovado', 'Aprovado'),
+        ('rejeitado', 'Rejeitado'),
+    ]
+
     usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='levantamentos')
     valor = models.DecimalField(max_digits=14, decimal_places=2)
-    status = models.CharField(max_length=20, default='pendente')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
     iban_destino = models.CharField(max_length=34)
     data_pedido = models.DateTimeField(auto_now_add=True)
-    # [Omitido métodos aprovar/rejeitar por brevidade]
-    class Meta: db_table = 'levantamentos'
+    data_processamento = models.DateTimeField(null=True, blank=True)
+    processado_por = models.ForeignKey(
+        Usuario,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='levantamentos_processados'
+    )
+    comprovativo_transferencia = models.CharField(max_length=200, null=True, blank=True)
+    observacoes = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'levantamentos'
+        ordering = ['-data_pedido']
+
+    def __str__(self):
+        return f'{self.usuario.username} - {self.valor} Kz ({self.status})'
+
+    @transaction.atomic
+    def aprovar(self, admin, comprovativo=''):
+        """Aprova o levantamento e debita o saldo do produtor."""
+        if self.status != 'pendente':
+            raise ValidationError('Este levantamento já foi processado.')
+
+        produtor = Usuario.objects.select_for_update().get(pk=self.usuario.pk)
+        if produtor.saldo_disponivel < self.valor:
+            raise ValidationError('Saldo insuficiente do produtor.')
+
+        produtor.saldo_disponivel = F('saldo_disponivel') - self.valor
+        produtor.save()
+
+        self.status = 'aprovado'
+        self.comprovativo_transferencia = comprovativo
+        self.data_processamento = timezone.now()
+        self.processado_por = admin
+        self.save()
+
+    @transaction.atomic
+    def rejeitar(self, admin, motivo=''):
+        """Rejeita o levantamento."""
+        if self.status != 'pendente':
+            raise ValidationError('Este levantamento já foi processado.')
+
+        self.status = 'rejeitado'
+        self.observacoes = motivo
+        self.data_processamento = timezone.now()
+        self.processado_por = admin
+        self.save()

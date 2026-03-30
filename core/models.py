@@ -1,6 +1,8 @@
 # core/models.py
+import re
 from django.db import models
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 
 
 # ===========================================
@@ -193,3 +195,194 @@ class LogAuditoria(models.Model):
 
     def __str__(self):
         return f'{self.acao} - {self.tabela_afetada} - {self.usuario}'
+
+# ===========================================
+# PÁGINA SOBRE (CONTEÚDO ESTÁTICO)
+# ===========================================
+class PaginaSobre(models.Model):
+    """Modelo para conteúdo da página Sobre"""
+    titulo = models.CharField(max_length=200, default='Sobre a AgroKongo')
+    missao = models.TextField()
+    visao = models.TextField()
+    valores = models.TextField(help_text='Valores separados por vírgula')
+    historia = models.TextField()
+    equipa = models.TextField(null=True, blank=True)
+    data_atualizacao = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'pagina_sobre'
+        verbose_name = 'Página Sobre'
+        verbose_name_plural = 'Página Sobre'
+
+    def __str__(self):
+        return self.titulo
+
+    def save(self, *args, **kwargs):
+        # Garantir que apenas 1 registro exista
+        if not self.pk and PaginaSobre.objects.exists():
+            raise ValidationError('Já existe uma página Sobre. Edite o registro existente.')
+        super().save(*args, **kwargs)
+
+
+# ===========================================
+# CONTATO / MENSAGENS DE SUPORTE
+# ===========================================
+class Contato(models.Model):
+    """Modelo para mensagens de contato do formulário"""
+    STATUS_CHOICES = [
+        ('pendente', 'Pendente'),
+        ('respondido', 'Respondido'),
+        ('arquivado', 'Arquivado'),
+    ]
+
+    nome = models.CharField(max_length=100)
+    email = models.EmailField()
+    telemovel = models.CharField(max_length=20, null=True, blank=True)
+    assunto = models.CharField(max_length=200)
+    mensagem = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
+    resposta = models.TextField(null=True, blank=True)
+    respondido_por = models.ForeignKey('accounts.Usuario', on_delete=models.SET_NULL, null=True, blank=True)
+    data_criacao = models.DateTimeField(auto_now_add=True)
+    data_resposta = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'contatos'
+        ordering = ['-data_criacao']
+
+    def __str__(self):
+        return f'{self.assunto} - {self.nome}'
+
+    def responder(self, admin, resposta):
+        """Responde à mensagem de contato"""
+        from django.utils import timezone
+        self.resposta = resposta
+        self.respondido_por = admin
+        self.status = 'respondido'
+        self.data_resposta = timezone.now()
+        self.save()
+
+
+# ===========================================
+# INFORMAÇÕES DE CONTATO DA EMPRESA
+# ===========================================
+class InfoContato(models.Model):
+    """Informações de contato da empresa (WhatsApp, email, etc.)"""
+    whatsapp = models.CharField(max_length=20, help_text='Ex: +244923456789')
+    email_suporte = models.EmailField()
+    email_comercial = models.EmailField()
+    endereco = models.TextField(null=True, blank=True)
+    horario_atendimento = models.CharField(max_length=200, default='Segunda a Sexta, 8h às 17h')
+    facebook = models.URLField(null=True, blank=True)
+    instagram = models.URLField(null=True, blank=True)
+    linkedin = models.URLField(null=True, blank=True)
+    data_atualizacao = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'info_contato'
+        verbose_name = 'Informações de Contato'
+        verbose_name_plural = 'Informações de Contato'
+
+    def __str__(self):
+        return f'Contato - {self.whatsapp}'
+
+    def save(self, *args, **kwargs):
+        # Garantir que apenas 1 registro exista
+        if not self.pk and InfoContato.objects.exists():
+            raise ValidationError('Já existe um registro de informações de contato.')
+        super().save(*args, **kwargs)
+
+# ===========================================
+# PÁGINA SOBRE (CONTEÚDO ESTÁTICO)
+# ===========================================
+class PaginaSobre(models.Model):
+    """Modelo para conteúdo da página Sobre"""
+    titulo = models.CharField(max_length=200, default='Sobre a AgroKongo')
+    missao = models.TextField()
+    visao = models.TextField()
+    valores = models.TextField(help_text='Valores separados por vírgula')
+    historia = models.TextField()
+    equipa = models.TextField(null=True, blank=True)
+    data_atualizacao = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'pagina_sobre'
+        verbose_name = 'Página Sobre'
+        verbose_name_plural = 'Página Sobre'
+
+    def __str__(self):
+        return self.titulo
+
+    def save(self, *args, **kwargs):
+        # Garantir que apenas 1 registro exista
+        if not self.pk and PaginaSobre.objects.exists():
+            raise ValidationError('Já existe uma página Sobre. Edite o registro existente.')
+        super().save(*args, **kwargs)
+
+
+# ===========================================
+# CONTATO / MENSAGENS DE SUPORTE
+# ===========================================
+class Contato(models.Model):
+    """Modelo para mensagens de contato do formulário"""
+    STATUS_CHOICES = [
+        ('pendente', 'Pendente'),
+        ('respondido', 'Respondido'),
+        ('arquivado', 'Arquivado'),
+    ]
+
+    nome = models.CharField(max_length=100)
+    email = models.EmailField()
+    telemovel = models.CharField(max_length=20, null=True, blank=True)
+    assunto = models.CharField(max_length=200)
+    mensagem = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pendente')
+    resposta = models.TextField(null=True, blank=True)
+    respondido_por = models.ForeignKey('accounts.Usuario', on_delete=models.SET_NULL, null=True, blank=True)
+    data_criacao = models.DateTimeField(auto_now_add=True)
+    data_resposta = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'contatos'
+        ordering = ['-data_criacao']
+
+    def __str__(self):
+        return f'{self.assunto} - {self.nome}'
+
+    def responder(self, admin, resposta):
+        """Responde à mensagem de contato"""
+        self.resposta = resposta
+        self.respondido_por = admin
+        self.status = 'respondido'
+        self.data_resposta = timezone.now()
+        self.save()
+
+
+# ===========================================
+# INFORMAÇÕES DE CONTATO DA EMPRESA
+# ===========================================
+class InfoContato(models.Model):
+    """Informações de contato da empresa (WhatsApp, email, etc.)"""
+    whatsapp = models.CharField(max_length=20, help_text='Ex: +244923456789')
+    email_suporte = models.EmailField()
+    email_comercial = models.EmailField()
+    endereco = models.TextField(null=True, blank=True)
+    horario_atendimento = models.CharField(max_length=200, default='Segunda a Sexta, 8h às 17h')
+    facebook = models.URLField(null=True, blank=True)
+    instagram = models.URLField(null=True, blank=True)
+    linkedin = models.URLField(null=True, blank=True)
+    data_atualizacao = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'info_contato'
+        verbose_name = 'Informações de Contato'
+        verbose_name_plural = 'Informações de Contato'
+
+    def __str__(self):
+        return f'Contato - {self.whatsapp}'
+
+    def save(self, *args, **kwargs):
+        # Garantir que apenas 1 registro exista
+        if not self.pk and InfoContato.objects.exists():
+            raise ValidationError('Já existe um registro de informações de contato.')
+        super().save(*args, **kwargs)

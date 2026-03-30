@@ -61,7 +61,6 @@ class SafraListSerializer(serializers.ModelSerializer):
 class SafraDetalheSerializer(serializers.ModelSerializer):
     produtor = UsuarioPublicoSerializer(read_only=True)
     produto = ProdutoSerializer(read_only=True)
-    imagens = ImagemSafraSerializer(many=True, read_only=True)
     quantidade_disponivel = serializers.SerializerMethodField()
 
     @extend_schema_field(float)
@@ -73,7 +72,7 @@ class SafraDetalheSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'titulo', 'produtor', 'produto', 'descricao',
             'quantidade', 'unidade_medida', 'preco_unitario',
-            'quantidade_disponivel', 'status', 'imagens',
+            'quantidade_disponivel', 'status',
             'data_criacao', 'data_atualizacao'
         ]
 
@@ -93,10 +92,9 @@ class SafraSerializer(serializers.ModelSerializer):
 
 
 # ===========================================
-# 🆕 RESERVA LIST (SPRINT 7)
+# RESERVA LIST
 # ===========================================
 class ReservaListSerializer(serializers.ModelSerializer):
-    """Serializer simplificado para lista de encomendas"""
     safra_titulo = serializers.CharField(source='safra.titulo', read_only=True)
     safra_produto = serializers.CharField(source='safra.produto.nome', read_only=True)
     safra_produtor_nome = serializers.CharField(source='safra.produtor.username', read_only=True)
@@ -113,10 +111,9 @@ class ReservaListSerializer(serializers.ModelSerializer):
 
 
 # ===========================================
-# 🆕 RESERVA DETALHE (SPRINT 7 - 5 PTS)
+# RESERVA DETALHE
 # ===========================================
 class ReservaDetalheSerializer(serializers.ModelSerializer):
-    """Serializer detalhado para visualização completa da encomenda"""
     comprador = UsuarioPublicoSerializer(read_only=True)
     safra_titulo = serializers.CharField(source='safra.titulo', read_only=True)
     safra_produto = serializers.CharField(source='safra.produto.nome', read_only=True)

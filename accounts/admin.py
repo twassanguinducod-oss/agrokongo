@@ -1,6 +1,6 @@
+# accounts/admin.py
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from django.utils.html import format_html
 from .models import Usuario
 
 
@@ -9,10 +9,12 @@ class UsuarioAdmin(BaseUserAdmin):
     # Campos do BaseUserAdmin + campos personalizados
     fieldsets = BaseUserAdmin.fieldsets + (
         ('Informações Pessoais', {
-            'fields': ('telemovel', 'tipo', 'nif', 'iban', 'foto_perfil', 'documento_pdf')
+            # ✅ REMOVIDO: documento_pdf (não existe)
+            'fields': ('telemovel', 'tipo', 'nif', 'iban', 'foto_perfil')
         }),
         ('Perfil & Validação', {
-            'fields': ('rating_vendedor', 'vendas_concluidas', 'perfil_completo', 'conta_validada')
+            # ✅ REMOVIDO: rating_vendedor (não existe)
+            'fields': ('vendas_concluidas', 'perfil_completo', 'conta_validada')
         }),
         ('Localização', {
             'fields': ('provincia', 'municipio')
@@ -56,12 +58,6 @@ class UsuarioAdmin(BaseUserAdmin):
     marcar_perfil_completo.short_description = '✓ Verificar perfis completos'
 
     def exportar_usuarios(self, request, queryset):
-        # Implementar exportação CSV se necessário
         self.message_user(request, 'Exportação iniciada (em desenvolvimento).')
 
     exportar_usuarios.short_description = '📥 Exportar usuários'
-
-    class Media:
-        css = {
-            'all': ('admin/css/custom_admin.css',)
-        }

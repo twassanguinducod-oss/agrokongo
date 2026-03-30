@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.utils.crypto import get_random_string
 from django.core.files.storage import FileSystemStorage
 from django.core.validators import FileExtensionValidator
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 import os
 import re
 import magic
@@ -285,7 +285,6 @@ class Pagamento(models.Model):
 
     @transaction.atomic
     def rejeitar(self, validador, motivo):
-        """🆕 SPRINT 5-6: Método para rejeitar pagamento"""
         if self.status == 'rejeitado':
             return
         self.status = 'rejeitado'
@@ -294,7 +293,6 @@ class Pagamento(models.Model):
         self.data_validacao = timezone.now()
         self.save()
 
-        # Reverter status da reserva
         reserva = Reserva.objects.select_for_update().get(pk=self.reserva.pk)
         if reserva.status == 'paga':
             reserva.status = 'confirmada'

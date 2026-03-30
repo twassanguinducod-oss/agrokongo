@@ -1,19 +1,32 @@
-# core/views.py
+
+
 from rest_framework import viewsets, status, permissions, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
-from .models import Notificacao, Mensagem, AlertaPreferencia, LogAuditoria
+
+from .models import (
+    Notificacao,
+    Mensagem,
+    AlertaPreferencia,
+    LogAuditoria,
+    PaginaSobre,
+    Contato,
+    InfoContato,
+)
+
 from .serializers import (
     NotificacaoSerializer,
-    NotificacaoBadgeSerializer,
     MensagemSerializer,
     MensagemCreateSerializer,
     AlertaPreferenciaSerializer,
     LogAuditoriaSerializer,
+    PaginaSobreSerializer,
+    ContatoSerializer,
+    ContatoCreateSerializer,
+    InfoContatoSerializer,
 )
-
 
 # ===========================================
 # NOTIFICAÇÃO VIEWSET
@@ -160,3 +173,129 @@ class LogAuditoriaViewSet(viewsets.ModelViewSet):
         if getattr(self, 'swagger_fake_view', False):
             return LogAuditoria.objects.none()
         return LogAuditoria.objects.all()
+
+
+
+# ===========================================
+# PÁGINA SOBRE VIEWSET
+# ===========================================
+class PaginaSobreViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para página Sobre.
+
+    Endpoints:
+    - GET /api/core/sobre/ (Obter conteúdo da página Sobre)
+    """
+    queryset = PaginaSobre.objects.all()
+    serializer_class = PaginaSobreSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def list(self, request, *args, **kwargs):
+        # Retornar apenas o primeiro registro (único)
+        instance = PaginaSobre.objects.first()
+        if not instance:
+            return Response(
+                {'message': 'Página Sobre ainda não foi configurada.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    def get_permissions(self):
+        # Apenas admin pode criar/editar
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAdminUser()]
+        return [permissions.AllowAny()]
+
+
+# ===========================================
+# CONTATO VIEWSET
+# ===========================================
+class ContatoViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para mensagens de contato.
+
+    Endpoints:
+    - POST /api/core/contato/ (Enviar mensagem - Público)
+    - GET /api/core/contato/ (Lista - Admin)
+    - PUT /api/core/contato/{id}/responder/ (Responder - Admin)
+    """
+    queryset = Contato.objects.all()
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['status']
+    ordering_fields = ['data_criacao']
+    ordering = ['-data_criacao']
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return ContatoCreateSerializer
+        return ContatoSerializer
+
+    def get_permissions(self):
+        if self.action in ['create', 'list']:
+            return [permissions.AllowAny()]
+        elif self.action == 'responder':
+            return [permissions.IsAdminUser()]
+        return [permissions.IsAdminUser()]
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Contato.objects.none()
+        # Admin vê todos, outros não vêem nada
+        if self.request.user.is_authenticated and self.request.user.tipo == 'admin':
+            return Contato.objects.all()
+        return Contato.objects.none()
+
+    @action(detail=True, methods=['put'], permission_classes=[permissions.IsAdminUser])
+    def responder(self, request, pk=None):
+        """Responde à mensagem de contato"""
+        contato = self.get_object()
+        resposta = request.data.get('resposta', '')
+
+        if not resposta:
+            return Response(
+                {'error': 'Resposta é obrigatória.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        contato.responder(admin=request.user, resposta=resposta)
+
+        # Criar notificação (opcional)
+        # Notificacao.objects.create(...)
+
+        return Response({
+            'success': True,
+            'message': 'Mensagem respondida com sucesso.',
+            'status': contato.status
+        }, status=status.HTTP_200_OK)
+
+
+# ===========================================
+# INFORMAÇÕES DE CONTATO VIEWSET
+# ===========================================
+class InfoContatoViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para informações de contato da empresa.
+
+    Endpoints:
+    - GET /api/core/info-contato/ (Obter informações - Público)
+    """
+    queryset = InfoContato.objects.all()
+    serializer_class = InfoContatoSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def list(self, request, *args, **kwargs):
+        # Retornar apenas o primeiro registro (único)
+        instance = InfoContato.objects.first()
+        if not instance:
+            return Response(
+                {'message': 'Informações de contato ainda não foram configuradas.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAdminUser()]
+        return [permissions.AllowAny()]

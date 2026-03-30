@@ -20,8 +20,8 @@ class CategoriaAdmin(admin.ModelAdmin):
 # ===========================================
 @admin.register(Produto)
 class ProdutoAdmin(admin.ModelAdmin):
-    list_display = ['nome', 'slug']
-    list_filter = []
+    list_display = ['nome', 'slug', 'ativa']
+    list_filter = ['categoria', 'ativa']
     search_fields = ['nome']
     prepopulated_fields = {'slug': ('nome',)}
     ordering = ['nome']
@@ -50,7 +50,7 @@ class SafraAdmin(admin.ModelAdmin):
 
 
 # ===========================================
-# RESERVA ADMIN (CORRIGIDO)
+# RESERVA ADMIN
 # ===========================================
 @admin.register(Reserva)
 class ReservaAdmin(admin.ModelAdmin):
@@ -62,12 +62,12 @@ class ReservaAdmin(admin.ModelAdmin):
         'preco_total',
         'status',
         'fatura_ref',
-        'data_reserva'  # ✅ CORRETO: data_reserva (não data_criacao)
+        'data_reserva'
     ]
     list_filter = ['status', 'data_reserva']
     search_fields = ['safra__titulo', 'comprador__username', 'fatura_ref']
     readonly_fields = ['preco_total', 'fatura_ref', 'data_reserva', 'data_expiracao']
-    ordering = ['-data_reserva']  # ✅ CORRETO
+    ordering = ['-data_reserva']
 
     actions = ['confirmar_reservas', 'cancelar_reservas', 'concluir_reservas']
 
@@ -99,7 +99,7 @@ class ReservaAdmin(admin.ModelAdmin):
 
 
 # ===========================================
-# PAGAMENTO ADMIN (CORRIGIDO)
+# PAGAMENTO ADMIN
 # ===========================================
 @admin.register(Pagamento)
 class PagamentoAdmin(admin.ModelAdmin):
@@ -108,7 +108,7 @@ class PagamentoAdmin(admin.ModelAdmin):
         'reserva',
         'valor',
         'status',
-        'data_criacao'  # ✅ Este existe no modelo Pagamento
+        'data_criacao'
     ]
     list_filter = ['status']
     search_fields = ['reserva__fatura_ref']

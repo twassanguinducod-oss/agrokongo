@@ -1,13 +1,11 @@
+# accounts/serializers.py
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError as DjangoValidationError
-import re
 from .models import Usuario, Levantamento
 
 
-
 # ===========================================
-# USUÁRIO SERIALIZERS (CORRIGIDO)
+# USUÁRIO SERIALIZERS
 # ===========================================
 class UsuarioPublicoSerializer(serializers.ModelSerializer):
     """
@@ -17,7 +15,7 @@ class UsuarioPublicoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Usuario
-        # ✅ REMOVER 'rating_vendedor' - não existe no modelo
+        # ✅ REMOVIDO: rating_vendedor (não existe no model)
         fields = ['id', 'username', 'foto_perfil', 'tipo', 'provincia', 'municipio']
 
 
@@ -82,7 +80,7 @@ class UsuarioLoginSerializer(serializers.Serializer):
 class UsuarioUpdatePasswordSerializer(serializers.Serializer):
     """Serializer para mudar senha"""
     senha_atual = serializers.CharField(write_only=True, required=True)
-    nova_senha = serializers.CharField(write_only=True, required=True)
+    nova_senha = serializers.CharField(write_only=True, required=True, validators=[validate_password])
     nova_senha_confirmacao = serializers.CharField(write_only=True, required=True)
 
 
@@ -95,7 +93,7 @@ class UsuarioListSerializer(serializers.ModelSerializer):
 
 
 # ===========================================
-# LEVANTAMENTO SERIALIZERS (CORRIGIDO)
+# LEVANTAMENTO SERIALIZERS
 # ===========================================
 class LevantamentoSerializer(serializers.ModelSerializer):
     """Serializer para pedidos de levantamento"""
@@ -103,17 +101,13 @@ class LevantamentoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Levantamento
-        # ✅ REMOVER campos que não existem no modelo
+        # ✅ REMOVIDO: banco_destino (não existe no model)
         fields = [
-            'id',
-            'usuario',
-            'usuario_nome',
-            'valor',
-            'iban_destino',
-            'status',
-            'data_pedido'
+            'id', 'usuario', 'usuario_nome', 'valor', 'iban_destino',
+            'status', 'data_pedido', 'data_processamento',
+            'comprovativo_transferencia', 'observacoes'
         ]
-        read_only_fields = ['id', 'usuario', 'status', 'data_pedido']
+        read_only_fields = ['id', 'usuario', 'status', 'data_pedido', 'data_processamento']
 
     def validate_valor(self, value):
         if value < 500:
@@ -123,21 +117,14 @@ class LevantamentoSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         user = self.context['request'].user
         if user.saldo_disponivel < attrs['valor']:
-            raise serializers.ValidationError({
-                'valor': 'Saldo insuficiente para realizar este levantamento.'
-            })
+            raise serializers.ValidationError({'valor': 'Saldo insuficiente para realizar este levantamento.'})
         return attrs
 
     def create(self, validated_data):
         validated_data['usuario'] = self.context['request'].user
-        validated_data['iban_destino'] = (
-                validated_data.get('iban_destino') or
-                validated_data['usuario'].iban
-        )
+        validated_data['iban_destino'] = validated_data.get('iban_destino') or validated_data['usuario'].iban
 
         if not validated_data['iban_destino']:
-            raise serializers.ValidationError({
-                'iban_destino': 'Informe o IBAN de destino no seu perfil ou no pedido.'
-            })
+            raise serializers.ValidationError({'iban_destino': 'Informe o IBAN de destino no seu perfil ou no pedido.'})
 
         return super().create(validated_data)
